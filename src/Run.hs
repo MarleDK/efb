@@ -7,6 +7,8 @@ import Import hiding (on)
 import qualified Control.Exception as E
 import qualified Graphics.Vty as V
 import qualified Data.Text as Text
+import RIO.Process (proc, withProcessWait, waitExitCode)
+import RIO.List (headMaybe)
 
 import qualified Brick.Main as M
 import qualified Brick.Widgets.List as L
@@ -15,10 +17,8 @@ import qualified Brick.AttrMap as A
 import qualified Brick.Types as T
 import Brick.Types (Widget, BrickEvent(..))
 import Brick.Widgets.Center (center, hCenter)
-import Brick.Widgets.Border (borderWithLabel, vBorder)
-import Brick.Widgets.Border.Style (unicode)
 import Brick.Widgets.Core 
-  ((<=>), (<+>), str, withBorderStyle, txt, withDefAttr, emptyWidget, vBox, padTop, vLimit, hLimit)
+  ((<=>), txt, withDefAttr, emptyWidget, vBox, padTop)
 import Brick.Util (on, fg)
 
 data Name = FileBrowser1
@@ -26,28 +26,19 @@ data Name = FileBrowser1
 
 run :: RIO App ()
 run = do
-  b <- liftIO main 
-  logInfo $ "Selected entry: " -- <> display (show (FB.fileBrowserSelection b))
+  b <- liftIO $ M.defaultMain theApp =<< FB.newFileBrowser FB.selectNonDirectories FileBrowser1 Nothing
+  _ <- case headMaybe $ FB.fileBrowserSelection b of
+                   Nothing -> return $ ExitFailure 1
+                   Just fileInfo -> proc "nvr" [FB.fileInfoSanitizedFilename fileInfo] (\processConfig -> withProcessWait processConfig waitExitCode)
+  logInfo $ "Selected entry: " <> displayShow (FB.fileBrowserSelection b)
+  --createProcess $ shell $ "nvr " ++ (show (FB.fileBrowserSelection b))
   
-
---main :: IO ()
-main = M.defaultMain theApp =<< FB.newFileBrowser FB.selectNonDirectories FileBrowser1 Nothing
-
--- drawUi :: s -> [Widget ()]
--- drawUi =     
---   withBorderStyle unicode $
---   borderWithLabel (str "Hello!") $
---   (center (str "Left") <+> vBorder <+> center (str "Right"))
-
-
+  
 
 drawUI :: FB.FileBrowser Name -> [Widget Name]
 drawUI b = [center $ ui <=> help]
     where
         ui = hCenter $
-             vLimit 15 $
-             hLimit 50 $
-             borderWithLabel (txt "Choose a file") $
              FB.renderFileBrowser True b
         help = padTop (T.Pad 1) $
                vBox [ case FB.fileBrowserException b of
