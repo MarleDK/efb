@@ -7,7 +7,7 @@ import Import hiding (on)
 import qualified Control.Exception as E
 import qualified Graphics.Vty as V
 import qualified Data.Text as Text
-import RIO.Process (proc, withProcessWait, waitExitCode)
+import System.Process.Typed (proc, runProcess)
 import RIO.List (headMaybe)
 
 import qualified Brick.Main as M
@@ -27,13 +27,19 @@ data Name = FileBrowser1
 run :: RIO App ()
 run = do
   b <- liftIO $ M.defaultMain theApp =<< FB.newFileBrowser FB.selectNonDirectories FileBrowser1 Nothing
-  _ <- case headMaybe $ FB.fileBrowserSelection b of
-                   Nothing -> return $ ExitFailure 1
-                   Just fileInfo -> proc "nvr" [FB.fileInfoSanitizedFilename fileInfo] (\processConfig -> withProcessWait processConfig waitExitCode)
   logInfo $ "Selected entry: " <> displayShow (FB.fileBrowserSelection b)
+  
   --createProcess $ shell $ "nvr " ++ (show (FB.fileBrowserSelection b))
   
-  
+openFile :: FB.FileBrowser Name -> IO (FB.FileBrowser Name)
+openFile s =
+  case FB.fileBrowserCursor s of
+    Nothing -> return s -- $ ExitFailure 1
+    Just fileInfo -> 
+      case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
+        Right (Just FB.RegularFile) -> runProcess (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
+                                       >> (return s)
+        _ -> return s
 
 drawUI :: FB.FileBrowser Name -> [Widget Name]
 drawUI b = [center $ ui <=> help]
@@ -56,16 +62,12 @@ appEvent b (VtyEvent ev) =
     case ev of
         V.EvKey V.KEsc [] | not (FB.fileBrowserIsSearching b) ->
             M.halt b
+        V.EvKey V.KEnter [] -> do
+            b' <- FB.handleFileBrowserEvent ev b 
+            M.suspendAndResume (openFile b')
         _ -> do
-            b' <- FB.handleFileBrowserEvent ev b
-            -- If the browser has a selected file after handling the
-            -- event (because the user pressed Enter), shut down.
-            case ev of
-                V.EvKey V.KEnter [] ->
-                    case FB.fileBrowserSelection b' of
-                        [] -> M.continue b'
-                        _ -> M.halt b'
-                _ -> M.continue b'
+            b' <- FB.handleFileBrowserEvent ev b 
+            M.continue b'
 appEvent b _ = M.continue b
 
 errorAttr :: A.AttrName

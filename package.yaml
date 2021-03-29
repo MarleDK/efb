@@ -25,6 +25,7 @@ dependencies:
 - brick >= 0.58 && < 0.61
 - vty 
 - text
+- typed-process
 
 ghc-options:
 - -Wall
