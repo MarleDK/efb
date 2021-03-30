@@ -26,6 +26,8 @@ dependencies:
 - vty 
 - text
 - typed-process
+- directory
+- filepath
 
 ghc-options:
 - -Wall

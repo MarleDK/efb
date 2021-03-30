@@ -37,6 +37,8 @@ library
   build-depends:
       base >=4.11 && <10
     , brick >=0.58 && <0.61
+    , directory
+    , filepath
     , rio >=0.1.12.0
     , text
     , typed-process
@@ -53,6 +55,8 @@ executable hfm-exe
   build-depends:
       base >=4.11 && <10
     , brick >=0.58 && <0.61
+    , directory
+    , filepath
     , hfm
     , optparse-simple
     , rio >=0.1.12.0
@@ -73,6 +77,8 @@ test-suite hfm-test
   build-depends:
       base >=4.11 && <10
     , brick >=0.58 && <0.61
+    , directory
+    , filepath
     , hfm
     , hspec
     , rio >=0.1.12.0
