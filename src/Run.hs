@@ -87,7 +87,10 @@ renderFileTree :: (Ord n, Show n) => FileTree n -> Widget n
 renderFileTree fileTree = L.renderList renderFileInfo True $ fileTreeEntries fileTree
 
 renderFileInfo :: Bool -> FileInfo -> Widget n
-renderFileInfo _selected fileInfo = txt $ Text.pack $ FB.fileInfoSanitizedFilename fileInfo
+renderFileInfo _selected fileInfo = 
+  case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
+    Right (Just FB.Directory) -> txt $ Text.pack (FB.fileInfoSanitizedFilename fileInfo) <> "/"
+    _ -> txt $ Text.pack $ FB.fileInfoSanitizedFilename fileInfo
 
 drawUI :: FileTree Name -> [Widget Name]
 drawUI ft = [center ui ]
