@@ -26,6 +26,10 @@ import Brick.Widgets.Core
   ((<=>), txt, withDefAttr, emptyWidget, vBox, padTop)
 import Brick.Util (on, fg)
 
+--------------------------------------------------------------------------------
+-- Types
+--------------------------------------------------------------------------------
+
 data Name = FileBrowser1
   deriving (Eq, Show, Ord)
 
@@ -45,6 +49,15 @@ mapEntries f (FileTree wd entries ss name) = (FileTree wd (f entries) ss name)
 --setSearchString :: FileTree n -> Maybe Text.Text -> FileTree n
 --setSearchString (FileTree wd entries _ name) newSearchString = (FileTree wd entries newSearchString name)
 
+--------------------------------------------------------------------------------
+-- Run
+--------------------------------------------------------------------------------
+
+run :: RIO App ()
+run = do
+  _ <- liftIO $ M.defaultMain theApp =<< newFileTree FileBrowser1
+  return ()
+  
 parentOf :: FilePath -> IO FileInfo
 parentOf path = FB.getFileInfo ".." $ FP.takeDirectory path
 
@@ -53,40 +66,22 @@ newFileTree name = do
   initialCwd <- D.getCurrentDirectory
   updateWorkingDirectory name initialCwd
 
-updateWorkingDirectory :: n -> FilePath -> IO (FileTree n)
-updateWorkingDirectory name workingDirectory = do
-  entriesResult <- E.try $ FB.entriesForDirectory workingDirectory
-
-  let (entries, _) = case entriesResult of
-          Left (e::E.IOException) -> ([], Just e)
-          Right es -> (es, Nothing)
-
-  allEntries <- if workingDirectory == "/" then return entries else do
-      parentResult <- E.try $ parentOf workingDirectory
-      return $ case parentResult of
-          Left (_::E.IOException) -> entries
-          Right parent -> parent : entries
-
-  return $ FileTree workingDirectory (L.list name (Vec.fromList allEntries) 1) Nothing name
-
-run :: RIO App ()
-run = do
-  _ <- liftIO $ M.defaultMain theApp =<< newFileTree FileBrowser1
-  return ()
-  
 -- | Get the file information for the file under the cursor, if any.
 fileTreeCursor :: FileTree n -> Maybe FileInfo
 fileTreeCursor ft = snd <$> L.listSelectedElement (fileTreeEntries ft)
+
+theApp :: M.App (FileTree Name) e Name
+theApp =
+    M.App { M.appDraw = drawUI
+          , M.appChooseCursor = M.showFirstCursor
+          , M.appHandleEvent = appEvent
+          , M.appStartEvent = return
+          , M.appAttrMap = const theMap
+          }
   
-openFile :: FileTree Name -> IO (FileTree Name)
-openFile s =
-  case fileTreeCursor s of
-    Nothing -> return s -- $ ExitFailure 1
-    Just fileInfo -> 
-      case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
-        Right (Just FB.RegularFile) -> runProcess (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
-                                       >> (return s)
-        _ -> return s
+--------------------------------------------------------------------------------
+-- Rendering
+--------------------------------------------------------------------------------
 
 renderFileTree :: (Ord n, Show n) => FileTree n -> Widget n
 renderFileTree fileTree = L.renderList renderFileInfo True $ fileTreeEntries fileTree
@@ -109,6 +104,37 @@ drawUI ft = [center ui ]
 --                    , hCenter $ txt "Enter: change directory or select file"
 --                    , hCenter $ txt "Esc: quit"
 --                    ]
+
+--------------------------------------------------------------------------------
+-- Handling events
+--------------------------------------------------------------------------------
+
+updateWorkingDirectory :: n -> FilePath -> IO (FileTree n)
+updateWorkingDirectory name workingDirectory = do
+  entriesResult <- E.try $ FB.entriesForDirectory workingDirectory
+
+  let (entries, _) = case entriesResult of
+          Left (e::E.IOException) -> ([], Just e)
+          Right es -> (es, Nothing)
+
+  allEntries <- if workingDirectory == "/" then return entries else do
+      parentResult <- E.try $ parentOf workingDirectory
+      return $ case parentResult of
+          Left (_::E.IOException) -> entries
+          Right parent -> parent : entries
+
+  return $ FileTree workingDirectory (L.list name (Vec.fromList allEntries) 1) Nothing name
+
+openFile :: FileTree Name -> IO (FileTree Name)
+openFile s =
+  case fileTreeCursor s of
+    Nothing -> return s -- $ ExitFailure 1
+    Just fileInfo -> 
+      case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
+        Right (Just FB.RegularFile) -> runProcess (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
+                                       >> (return s)
+        _ -> return s
+
 
 enterFile :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
 enterFile ft = 
@@ -148,6 +174,10 @@ appEvent ft (VtyEvent ev) =
   
 appEvent ft _ = M.continue ft
 
+--------------------------------------------------------------------------------
+-- Attributes
+--------------------------------------------------------------------------------
+
 errorAttr :: A.AttrName
 errorAttr = "error"
 
@@ -166,13 +196,3 @@ theMap = A.attrMap V.defAttr
 --    , (FB.fileBrowserSelectedAttr, V.white `on` V.magenta)
 --    , (errorAttr, fg V.red)
 --    ]
-
-theApp :: M.App (FileTree Name) e Name
-theApp =
-    M.App { M.appDraw = drawUI
-          , M.appChooseCursor = M.showFirstCursor
-          , M.appHandleEvent = appEvent
-          , M.appStartEvent = return
-          , M.appAttrMap = const theMap
-          }
-
