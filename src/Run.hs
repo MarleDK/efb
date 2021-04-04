@@ -36,39 +36,51 @@ data FileTree n =
            , fileTreeName :: n
            } 
 
+--setEntries :: FileTree n -> L.List n FileInfo -> FileTree n
+--setEntries (FileTree wd _ ss name) newEntries = (FileTree wd newEntries ss name)
+
+mapEntries :: (L.List n FileInfo -> L.List n FileInfo) -> FileTree n -> FileTree n
+mapEntries f (FileTree wd entries ss name) = (FileTree wd (f entries) ss name)
+
+--setSearchString :: FileTree n -> Maybe Text.Text -> FileTree n
+--setSearchString (FileTree wd entries _ name) newSearchString = (FileTree wd entries newSearchString name)
+
 parentOf :: FilePath -> IO FileInfo
 parentOf path = FB.getFileInfo ".." $ FP.takeDirectory path
 
 newFileTree :: n -> IO (FileTree n)
 newFileTree name = do
   initialCwd <- D.getCurrentDirectory
-  entriesResult <- E.try $ FB.entriesForDirectory initialCwd
+  updateWorkingDirectory name initialCwd
 
-  let (entries, exc) = case entriesResult of
+updateWorkingDirectory :: n -> FilePath -> IO (FileTree n)
+updateWorkingDirectory name workingDirectory = do
+  entriesResult <- E.try $ FB.entriesForDirectory workingDirectory
+
+  let (entries, _) = case entriesResult of
           Left (e::E.IOException) -> ([], Just e)
           Right es -> (es, Nothing)
 
-  allEntries <- if initialCwd == "/" then return entries else do
-      parentResult <- E.try $ parentOf initialCwd
+  allEntries <- if workingDirectory == "/" then return entries else do
+      parentResult <- E.try $ parentOf workingDirectory
       return $ case parentResult of
           Left (_::E.IOException) -> entries
           Right parent -> parent : entries
 
-  return $ FileTree initialCwd (L.list name (Vec.fromList allEntries) 1) Nothing name
+  return $ FileTree workingDirectory (L.list name (Vec.fromList allEntries) 1) Nothing name
 
 run :: RIO App ()
 run = do
   _ <- liftIO $ M.defaultMain theApp =<< newFileTree FileBrowser1
-  --FB.newFileBrowser FB.selectNonDirectories FileBrowser1 Nothing
   return ()
   
 -- | Get the file information for the file under the cursor, if any.
-fileBrowserCursor :: FileTree n -> Maybe FileInfo
-fileBrowserCursor b = snd <$> L.listSelectedElement (fileTreeEntries b)
+fileTreeCursor :: FileTree n -> Maybe FileInfo
+fileTreeCursor ft = snd <$> L.listSelectedElement (fileTreeEntries ft)
   
 openFile :: FileTree Name -> IO (FileTree Name)
 openFile s =
-  case fileBrowserCursor s of
+  case fileTreeCursor s of
     Nothing -> return s -- $ ExitFailure 1
     Just fileInfo -> 
       case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
@@ -83,10 +95,10 @@ renderFileInfo :: Bool -> FileInfo -> Widget n
 renderFileInfo _selected fileInfo = txt $ Text.pack $ FB.fileInfoSanitizedFilename fileInfo
 
 drawUI :: FileTree Name -> [Widget Name]
-drawUI b = [center ui ]
+drawUI ft = [center ui ]
     where
         ui = hCenter $
-             renderFileTree b
+             renderFileTree ft
 --        help = padTop (T.Pad 1) $
 --               vBox [ case FB.fileBrowserException b of
 --                          Nothing -> emptyWidget
@@ -98,36 +110,51 @@ drawUI b = [center ui ]
 --                    , hCenter $ txt "Esc: quit"
 --                    ]
 
+enterFile :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
+enterFile ft = 
+  case fileTreeCursor ft of
+    Nothing -> M.continue ft
+    Just entry -> 
+      case FB.fileInfoFileType entry of 
+        Just FB.Directory ->
+          M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) (FB.fileInfoFilePath entry)
+
+        Just FB.SymbolicLink -> 
+          case fileInfoLinkTargetType entry of
+            Just FB.Directory -> 
+              M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) (FB.fileInfoFilePath entry)
+            _ -> M.continue ft
+
+        Just FB.RegularFile -> M.suspendAndResume (openFile ft)
+        _ -> M.continue ft
+
+
 appEvent :: FileTree Name -> BrickEvent Name e -> T.EventM Name (T.Next (FileTree Name))
-appEvent b (VtyEvent ev) =
+appEvent ft (VtyEvent ev) =
     case ev of
       V.EvKey V.KEsc [] ->
-        M.halt b
+        M.halt ft
       V.EvKey V.KEnter [] -> do
-        --b' <- FB.handleFileBrowserEvent ev b 
-        M.suspendAndResume (openFile b)
-      _ -> M.continue b
+        enterFile ft
+      V.EvKey (V.KChar 'j') [] ->
+        M.continue $ mapEntries (L.listMoveBy 1) ft
+      V.EvKey V.KDown [] ->
+        M.continue $ mapEntries (L.listMoveBy 1) ft
+      V.EvKey V.KUp [] ->
+        M.continue $ mapEntries (L.listMoveBy (-1)) ft
+      V.EvKey (V.KChar 'k') [] ->
+        M.continue $ mapEntries (L.listMoveBy (-1)) ft
+      _ -> M.continue ft
   
-appEvent b _ = M.continue b
---appEvent :: FB.FileBrowser Name -> BrickEvent Name e -> T.EventM Name (T.Next (FB.FileBrowser Name))
---appEvent b (VtyEvent ev) =
---    case ev of
---        V.EvKey V.KEsc [] | not (FB.fileBrowserIsSearching b) ->
---            M.halt b
---        V.EvKey V.KEnter [] -> do
---            b' <- FB.handleFileBrowserEvent ev b 
---            M.suspendAndResume (openFile b')
---        _ -> do
---            b' <- FB.handleFileBrowserEvent ev b 
---            M.continue b'
---appEvent b _ = M.continue b
+appEvent ft _ = M.continue ft
 
 errorAttr :: A.AttrName
 errorAttr = "error"
 
 theMap :: A.AttrMap
-theMap = A.attrMap V.defAttr []
---    [ (L.listSelectedFocusedAttr, V.black `on` V.yellow)
+theMap = A.attrMap V.defAttr 
+    [ (L.listSelectedFocusedAttr, V.black `on` V.yellow)
+    ]
 --    , (FB.fileBrowserCurrentDirectoryAttr, V.white `on` V.blue)
 --    , (FB.fileBrowserSelectionInfoAttr, V.white `on` V.blue)
 --    , (FB.fileBrowserDirectoryAttr, fg V.blue)
