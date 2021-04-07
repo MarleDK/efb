@@ -35,15 +35,68 @@ data Name = FileBrowser1
 
 data FileTree n = 
   FileTree { fileTreeWorkingDirectory :: FilePath
-           , fileTreeEntries :: L.List n FileInfo
+           , fileTreeEntries :: L.GenericList n FileEntries FileInfo
            , fileTreeSearchString :: Maybe Text.Text
            , fileTreeName :: n
            } 
 
+data FileEntries a = FileEntries [Entry a]
+
+data Entry a = ExpandedDirectory a [Entry a]
+             | FileEntry a
+
+instance Functor FileEntries where
+  fmap f (FileEntries fs) = 
+    FileEntries $ fmap (fmapEntry f) fs
+      where 
+        fmapEntry f (FileEntry fi) = FileEntry (f fi)
+        fmapEntry f (ExpandedDirectory fi entries) = ExpandedDirectory (f fi) (map (fmapEntry f) entries)
+          
+instance Foldable FileEntries where
+  foldr f z (FileEntries fs) = 
+    foldr (foldEntry f) z fs
+      where 
+        foldEntry f (FileEntry fi) = (f fi)
+        foldEntry f (ExpandedDirectory fi entries) = flip (foldr (foldEntry f)) entries
+
+instance Traversable FileEntries where
+  traverse f (FileEntries fs) = 
+    FileEntries <$> traverse fEntry fs
+      where
+        fEntry (FileEntry fi) = FileEntry <$> f fi 
+        fEntry (ExpandedDirectory fi dirEntries) = 
+          ExpandedDirectory <$> f fi <*> traverse fEntry dirEntries 
+
+instance L.Splittable FileEntries where
+  splitAt 0 (FileEntries fs) = (FileEntries [], FileEntries fs)
+  splitAt i (FileEntries fs) = 
+    let (_, ts) = takeEntry i fs
+        (_, ds) = dropEntry i fs
+    in (FileEntries ts, FileEntries ds)
+    where 
+      takeEntry 0 _ = (0, [])
+      takeEntry i [] = (i, [])
+      takeEntry i (FileEntry fi : entries) = 
+        let (i', ls) = takeEntry (i-1) entries
+        in (i', FileEntry fi : ls)
+      takeEntry i (ExpandedDirectory fi dirEntries : entries) = 
+        let (i', ls) = takeEntry (i-1) dirEntries
+            (i'', ls') = takeEntry (i') entries
+        in (i'', ExpandedDirectory fi ls : ls')
+      dropEntry 0 fs = (0,fs)
+      dropEntry i [] = (i,[])
+      dropEntry i (FileEntry _ : entries) = dropEntry (i-1) entries
+      dropEntry i (ExpandedDirectory _ dirEntries : entries) = 
+        let (i', _) = dropEntry (i-1) dirEntries
+            (i'', ds') = dropEntry i' entries
+        in (i'', ds')
+
+
 --setEntries :: FileTree n -> L.List n FileInfo -> FileTree n
 --setEntries (FileTree wd _ ss name) newEntries = (FileTree wd newEntries ss name)
 
-mapEntries :: (L.List n FileInfo -> L.List n FileInfo) -> FileTree n -> FileTree n
+mapEntries :: (L.GenericList n FileEntries FileInfo -> L.GenericList n FileEntries FileInfo) 
+           -> FileTree n -> FileTree n
 mapEntries f (FileTree wd entries ss name) = (FileTree wd (f entries) ss name)
 
 --setSearchString :: FileTree n -> Maybe Text.Text -> FileTree n
@@ -126,7 +179,7 @@ updateWorkingDirectory name workingDirectory = do
           Left (_::E.IOException) -> entries
           Right parent -> parent : entries
 
-  return $ FileTree workingDirectory (L.list name (Vec.fromList allEntries) 1) Nothing name
+  return $ FileTree workingDirectory (L.list name (FileEntries (map FileEntry allEntries)) 1) Nothing name
 
 openFile :: FileTree Name -> IO (FileTree Name)
 openFile s =
@@ -157,6 +210,12 @@ enterFile ft =
         Just FB.RegularFile -> M.suspendAndResume (openFile ft)
         _ -> M.continue ft
 
+expandDirectory :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
+expandDirectory ft =
+  case fileTreeCursoe ft of
+    Nothing -> M.continue ft
+    Just 
+
 
 appEvent :: FileTree Name -> BrickEvent Name e -> T.EventM Name (T.Next (FileTree Name))
 appEvent ft (VtyEvent ev) =
@@ -165,6 +224,8 @@ appEvent ft (VtyEvent ev) =
         M.halt ft
       V.EvKey V.KEnter [] -> do
         enterFile ft
+      V.EvKey (V.KChar 'e') [] ->
+        expandDirectory ft
       V.EvKey (V.KChar 'j') [] ->
         M.continue $ mapEntries (L.listMoveBy 1) ft
       V.EvKey V.KDown [] ->
