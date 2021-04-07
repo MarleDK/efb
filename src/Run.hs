@@ -39,25 +39,36 @@ data FileTree n =
            , fileTreeSearchString :: Maybe Text.Text
            , fileTreeName :: n
            } 
+  deriving (Show)
 
 data FileEntries a = FileEntries [Entry a]
+  deriving (Show, Eq)
+
+mapFileEntries :: (Entry a -> Entry a) -> FileEntries a -> FileEntries a
+mapFileEntries f (FileEntries fs) = FileEntries $ map f fs
+
 
 data Entry a = ExpandedDirectory a [Entry a]
              | FileEntry a
+  deriving (Show, Eq)
+
+getFileInfo :: Entry a -> a
+getFileInfo (ExpandedDirectory a _) = a
+getFileInfo (FileEntry a) = a
 
 instance Functor FileEntries where
   fmap f (FileEntries fs) = 
-    FileEntries $ fmap (fmapEntry f) fs
+    FileEntries $ fmap fmapEntry fs
       where 
-        fmapEntry f (FileEntry fi) = FileEntry (f fi)
-        fmapEntry f (ExpandedDirectory fi entries) = ExpandedDirectory (f fi) (map (fmapEntry f) entries)
+        fmapEntry (FileEntry fi) = FileEntry (f fi)
+        fmapEntry (ExpandedDirectory fi entries) = ExpandedDirectory (f fi) (map fmapEntry entries)
           
 instance Foldable FileEntries where
   foldr f z (FileEntries fs) = 
-    foldr (foldEntry f) z fs
+    foldr foldEntry z fs
       where 
-        foldEntry f (FileEntry fi) = (f fi)
-        foldEntry f (ExpandedDirectory fi entries) = flip (foldr (foldEntry f)) entries
+        foldEntry (FileEntry fi) = (f fi)
+        foldEntry (ExpandedDirectory fi entries) = flip (foldr foldEntry) (FileEntry fi:entries)
 
 instance Traversable FileEntries where
   traverse f (FileEntries fs) = 
@@ -69,9 +80,9 @@ instance Traversable FileEntries where
 
 instance L.Splittable FileEntries where
   splitAt 0 (FileEntries fs) = (FileEntries [], FileEntries fs)
-  splitAt i (FileEntries fs) = 
-    let (_, ts) = takeEntry i fs
-        (_, ds) = dropEntry i fs
+  splitAt n (FileEntries fs) = 
+    let (_, ts) = takeEntry n fs
+        (_, ds) = dropEntry n fs
     in (FileEntries ts, FileEntries ds)
     where 
       takeEntry 0 _ = (0, [])
@@ -83,7 +94,7 @@ instance L.Splittable FileEntries where
         let (i', ls) = takeEntry (i-1) dirEntries
             (i'', ls') = takeEntry (i') entries
         in (i'', ExpandedDirectory fi ls : ls')
-      dropEntry 0 fs = (0,fs)
+      dropEntry 0 fs' = (0,fs')
       dropEntry i [] = (i,[])
       dropEntry i (FileEntry _ : entries) = dropEntry (i-1) entries
       dropEntry i (ExpandedDirectory _ dirEntries : entries) = 
@@ -165,20 +176,24 @@ drawUI ft = [center ui ]
 -- Handling events
 --------------------------------------------------------------------------------
 
-updateWorkingDirectory :: n -> FilePath -> IO (FileTree n)
-updateWorkingDirectory name workingDirectory = do
+getDirectoryContent :: FilePath -> IO ([FileInfo])
+getDirectoryContent workingDirectory = do
   entriesResult <- E.try $ FB.entriesForDirectory workingDirectory
 
   let (entries, _) = case entriesResult of
           Left (e::E.IOException) -> ([], Just e)
           Right es -> (es, Nothing)
 
+  return entries
+
+updateWorkingDirectory :: n -> FilePath -> IO (FileTree n)
+updateWorkingDirectory name workingDirectory = do
+  entries <- getDirectoryContent workingDirectory
   allEntries <- if workingDirectory == "/" then return entries else do
       parentResult <- E.try $ parentOf workingDirectory
       return $ case parentResult of
           Left (_::E.IOException) -> entries
           Right parent -> parent : entries
-
   return $ FileTree workingDirectory (L.list name (FileEntries (map FileEntry allEntries)) 1) Nothing name
 
 openFile :: FileTree Name -> IO (FileTree Name)
@@ -190,7 +205,6 @@ openFile s =
         Right (Just FB.RegularFile) -> runProcess (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
                                        >> (return s)
         _ -> return s
-
 
 enterFile :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
 enterFile ft = 
@@ -210,12 +224,35 @@ enterFile ft =
         Just FB.RegularFile -> M.suspendAndResume (openFile ft)
         _ -> M.continue ft
 
+-- | flipExpansion expands a directory, if it is collapsed, and collapses a directory if it is expanded
+flipExpansion :: [Entry FileInfo] -- ^ The contents of the directory to maybe expand
+              -> FileInfo         -- ^ The fileinfo of the file to find
+              -> Entry FileInfo   -- ^ The fileInfo of the list
+              -> Entry FileInfo
+flipExpansion newDirectoryContents fileInfo entry = if getFileInfo entry == fileInfo 
+                                 then case entry of
+                                        ExpandedDirectory fi _ -> FileEntry fi
+                                        FileEntry fi -> ExpandedDirectory fi newDirectoryContents
+                                 else entry
+-- | expandDirectory looks at the current selection, if it is a directory, it flips the expansion
+-- of it with flipExpansion
 expandDirectory :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
 expandDirectory ft =
-  case fileTreeCursoe ft of
+  case fileTreeCursor ft of
     Nothing -> M.continue ft
-    Just 
+    Just fileInfo -> 
+      case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of -- See if the file is a directory
+        Right (Just FB.Directory) -> do
+          newDirectoryContents <- 
+            map FileEntry <$> -- Make it an Entry type
+              liftIO (getDirectoryContent (fileInfoFilePath fileInfo)) -- get contents of directory
 
+          newFileEntries <- return $ mapFileEntries (flipExpansion newDirectoryContents fileInfo) 
+                                   $ L.listElements $ fileTreeEntries ft
+
+          M.continue $ mapEntries (\oldList -> L.listReplace newFileEntries (L.listSelected oldList) oldList) ft
+
+        _ -> M.continue ft
 
 appEvent :: FileTree Name -> BrickEvent Name e -> T.EventM Name (T.Next (FileTree Name))
 appEvent ft (VtyEvent ev) =
