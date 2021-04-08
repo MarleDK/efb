@@ -35,7 +35,7 @@ data Name = FileBrowser1
 
 data FileTree n = 
   FileTree { fileTreeWorkingDirectory :: FilePath
-           , fileTreeEntries :: L.GenericList n FileEntries FileInfo
+           , fileTreeEntries :: L.GenericList n FileEntries FileTreeInfo
            , fileTreeSearchString :: Maybe Text.Text
            , fileTreeName :: n
            } 
@@ -52,9 +52,12 @@ data Entry a = ExpandedDirectory a [Entry a]
              | FileEntry a
   deriving (Show, Eq)
 
-getFileInfo :: Entry a -> a
-getFileInfo (ExpandedDirectory a _) = a
-getFileInfo (FileEntry a) = a
+getFileInfo :: Entry FileTreeInfo -> FileInfo
+getFileInfo (ExpandedDirectory (_,fi) _) = fi
+getFileInfo (FileEntry (_,fi)) = fi
+
+fileInfoToEntry :: FileInfo -> Entry FileTreeInfo
+fileInfoToEntry fi = FileEntry ("",fi)
 
 instance Functor FileEntries where
   fmap f (FileEntries fs) = 
@@ -98,15 +101,17 @@ instance L.Splittable FileEntries where
       dropEntry i [] = (i,[])
       dropEntry i (FileEntry _ : entries) = dropEntry (i-1) entries
       dropEntry i (ExpandedDirectory _ dirEntries : entries) = 
-        let (i', _) = dropEntry (i-1) dirEntries
-            (i'', ds') = dropEntry i' entries
-        in (i'', ds')
+        let (i', ds') = dropEntry (i-1) (dirEntries ++ entries)
+        in (i', ds')
 
+-- | FileTreeInfo is an alias for a FileInfo with some text to prepend when rendered,
+-- used to indent expanded directory contents.
+type FileTreeInfo = (Text, FileInfo)
 
 --setEntries :: FileTree n -> L.List n FileInfo -> FileTree n
 --setEntries (FileTree wd _ ss name) newEntries = (FileTree wd newEntries ss name)
 
-mapEntries :: (L.GenericList n FileEntries FileInfo -> L.GenericList n FileEntries FileInfo) 
+mapEntries :: (L.GenericList n FileEntries FileTreeInfo -> L.GenericList n FileEntries FileTreeInfo) 
            -> FileTree n -> FileTree n
 mapEntries f (FileTree wd entries ss name) = (FileTree wd (f entries) ss name)
 
@@ -131,7 +136,7 @@ newFileTree name = do
   updateWorkingDirectory name initialCwd
 
 -- | Get the file information for the file under the cursor, if any.
-fileTreeCursor :: FileTree n -> Maybe FileInfo
+fileTreeCursor :: Show n => FileTree n -> Maybe FileTreeInfo
 fileTreeCursor ft = snd <$> L.listSelectedElement (fileTreeEntries ft)
 
 theApp :: M.App (FileTree Name) e Name
@@ -150,11 +155,11 @@ theApp =
 renderFileTree :: (Ord n, Show n) => FileTree n -> Widget n
 renderFileTree fileTree = L.renderList renderFileInfo True $ fileTreeEntries fileTree
 
-renderFileInfo :: Bool -> FileInfo -> Widget n
-renderFileInfo _selected fileInfo = 
+renderFileInfo :: Bool -> FileTreeInfo -> Widget n
+renderFileInfo _selected (indent,fileInfo) = 
   case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
-    Right (Just FB.Directory) -> txt $ Text.pack (FB.fileInfoSanitizedFilename fileInfo) <> "/"
-    _ -> txt $ Text.pack $ FB.fileInfoSanitizedFilename fileInfo
+    Right (Just FB.Directory) -> txt $ indent <> Text.pack (FB.fileInfoSanitizedFilename fileInfo) <> "/"
+    _ -> txt $ indent <> Text.pack (FB.fileInfoSanitizedFilename fileInfo)
 
 drawUI :: FileTree Name -> [Widget Name]
 drawUI ft = [center ui ]
@@ -194,13 +199,13 @@ updateWorkingDirectory name workingDirectory = do
       return $ case parentResult of
           Left (_::E.IOException) -> entries
           Right parent -> parent : entries
-  return $ FileTree workingDirectory (L.list name (FileEntries (map FileEntry allEntries)) 1) Nothing name
+  return $ FileTree workingDirectory (L.list name (FileEntries (map fileInfoToEntry allEntries)) 1) Nothing name
 
 openFile :: FileTree Name -> IO (FileTree Name)
 openFile s =
   case fileTreeCursor s of
     Nothing -> return s -- $ ExitFailure 1
-    Just fileInfo -> 
+    Just (_,fileInfo) -> 
       case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
         Right (Just FB.RegularFile) -> runProcess (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
                                        >> (return s)
@@ -210,7 +215,7 @@ enterFile :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
 enterFile ft = 
   case fileTreeCursor ft of
     Nothing -> M.continue ft
-    Just entry -> 
+    Just (_,entry) -> 
       case FB.fileInfoFileType entry of 
         Just FB.Directory ->
           M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) (FB.fileInfoFilePath entry)
@@ -224,11 +229,14 @@ enterFile ft =
         Just FB.RegularFile -> M.suspendAndResume (openFile ft)
         _ -> M.continue ft
 
+addIndentation :: Text -> FileInfo -> FileTreeInfo
+addIndentation indent fi = (indent <> "  ", fi)
+
 -- | flipExpansion expands a directory, if it is collapsed, and collapses a directory if it is expanded
-flipExpansion :: [Entry FileInfo] -- ^ The contents of the directory to maybe expand
-              -> FileInfo         -- ^ The fileinfo of the file to find
-              -> Entry FileInfo   -- ^ The fileInfo of the list
-              -> Entry FileInfo
+flipExpansion :: [Entry FileTreeInfo] -- ^ The contents of the directory to maybe expand
+              -> FileInfo             -- ^ The fileinfo of the file to find
+              -> Entry FileTreeInfo   -- ^ The fileInfo of the list
+              -> Entry FileTreeInfo
 flipExpansion newDirectoryContents fileInfo entry = if getFileInfo entry == fileInfo 
                                  then case entry of
                                         ExpandedDirectory fi _ -> FileEntry fi
@@ -240,11 +248,11 @@ expandDirectory :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
 expandDirectory ft =
   case fileTreeCursor ft of
     Nothing -> M.continue ft
-    Just fileInfo -> 
+    Just (indent,fileInfo) -> 
       case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of -- See if the file is a directory
         Right (Just FB.Directory) -> do
           newDirectoryContents <- 
-            map FileEntry <$> -- Make it an Entry type
+            map (FileEntry . addIndentation indent) <$> -- Make it an Entry type
               liftIO (getDirectoryContent (fileInfoFilePath fileInfo)) -- get contents of directory
 
           newFileEntries <- return $ mapFileEntries (flipExpansion newDirectoryContents fileInfo) 
