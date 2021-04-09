@@ -45,8 +45,13 @@ data FileEntries a = FileEntries [Entry a]
   deriving (Show, Eq)
 
 mapFileEntries :: (Entry a -> Entry a) -> FileEntries a -> FileEntries a
-mapFileEntries f (FileEntries fs) = FileEntries $ map f fs
-
+mapFileEntries f (FileEntries fs) = FileEntries $ femap f fs
+  where 
+    femap f [] = []
+    femap f (fi@(FileEntry _) : t) = f fi : femap f t
+    femap f ((ExpandedDirectory fi dirEntries) : t) = 
+      let ed = ExpandedDirectory fi (femap f dirEntries)
+      in f ed : femap f t
 
 data Entry a = ExpandedDirectory a [Entry a]
              | FileEntry a
