@@ -1,10 +1,31 @@
 # hfm
 
-## Execute  
+## What is this?
 
-* Run `stack exec -- hfm-exe` to see "We're inside the application!"
-* With `stack exec -- hfm-exe --verbose` you will see the same message, with more logging.
+A simple file browser, which runs a custom command when selecting a file.
 
-## Run tests
+I created it to be used as a file browser when I am coding in neovim, where I use
+neovim remote (https://github.com/mhinz/neovim-remote) to spawn a neovim process 
+in one terminal, and then I have hfm in another terminal, which executes neovim 
+remote to open new files in the allready open neovim window. 
+By having hfm in a seperate window, I can control it with my windowmanager, instead
+of having it fixed to the same dimension as my neovim process.
 
-`stack test`
+
+## Features
+
+- Vim keybindings
+- Expandable directories (by pressing e)
+  - So you can see content of subdirectories
+
+## Todo 
+
+- Implement Colors
+- Implement more keybindings
+  - 'h' and 'l' to go up and down in the file tree
+  - 's' to enter search mode
+- Search mode
+- Custom command to execute
+- Build out command line options
+- Write command line help description
+- ? Multiple different commands to execute with different key presses?
