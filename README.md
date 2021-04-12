@@ -14,9 +14,10 @@ of having it fixed to the same dimension as my neovim process.
 
 ## Features
 
-- Vim keybindings
+- Run a custom command on selected file
 - Expandable directories (by pressing e)
   - So you can see content of subdirectories
+- Vim keybindings
 
 ## Todo 
 
