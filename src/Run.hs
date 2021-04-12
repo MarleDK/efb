@@ -4,6 +4,7 @@
 module Run (run) where
 
 import Import hiding (on)
+import FileEntries (FileEntries(..), FileTreeInfo, Entry(..), mapFileEntries, getFileInfo, fileInfoToEntry)
 
 import qualified Control.Exception as E
 import qualified Graphics.Vty as V
@@ -11,7 +12,6 @@ import qualified Data.Text as Text
 import System.Process.Typed (proc, runProcess)
 import qualified System.Directory as D
 import qualified System.FilePath as FP
-import qualified RIO.Vector.Boxed as Vec
 
 import qualified Brick.Main as M
 import qualified Brick.Widgets.List as L
@@ -33,85 +33,21 @@ import Brick.Util (on, fg)
 data Name = FileBrowser1
   deriving (Eq, Show, Ord)
 
+data Mode = Normal
+          | Search Text.Text
+  deriving (Eq, Show)
+
+mapSearchMode :: (Text.Text -> Text.Text) -> Mode -> Mode
+mapSearchMode f (Search t) = Search (f t)
+mapSearchMode _ mode = mode
+
 data FileTree n = 
   FileTree { fileTreeWorkingDirectory :: FilePath
            , fileTreeEntries :: L.GenericList n FileEntries FileTreeInfo
-           , fileTreeSearchString :: Maybe Text.Text
+           , fileTreeMode :: Mode
            , fileTreeName :: n
            } 
   deriving (Show)
-
-data FileEntries a = FileEntries [Entry a]
-  deriving (Show, Eq)
-
-mapFileEntries :: (Entry a -> Entry a) -> FileEntries a -> FileEntries a
-mapFileEntries f (FileEntries fs) = FileEntries $ femap f fs
-  where 
-    femap f [] = []
-    femap f (fi@(FileEntry _) : t) = f fi : femap f t
-    femap f ((ExpandedDirectory fi dirEntries) : t) = 
-      let ed = ExpandedDirectory fi (femap f dirEntries)
-      in f ed : femap f t
-
-data Entry a = ExpandedDirectory a [Entry a]
-             | FileEntry a
-  deriving (Show, Eq)
-
-getFileInfo :: Entry FileTreeInfo -> FileInfo
-getFileInfo (ExpandedDirectory (_,fi) _) = fi
-getFileInfo (FileEntry (_,fi)) = fi
-
-fileInfoToEntry :: FileInfo -> Entry FileTreeInfo
-fileInfoToEntry fi = FileEntry ("",fi)
-
-instance Functor FileEntries where
-  fmap f (FileEntries fs) = 
-    FileEntries $ fmap fmapEntry fs
-      where 
-        fmapEntry (FileEntry fi) = FileEntry (f fi)
-        fmapEntry (ExpandedDirectory fi entries) = ExpandedDirectory (f fi) (map fmapEntry entries)
-          
-instance Foldable FileEntries where
-  foldr f z (FileEntries fs) = 
-    foldr foldEntry z fs
-      where 
-        foldEntry (FileEntry fi) = (f fi)
-        foldEntry (ExpandedDirectory fi entries) = flip (foldr foldEntry) (FileEntry fi:entries)
-
-instance Traversable FileEntries where
-  traverse f (FileEntries fs) = 
-    FileEntries <$> traverse fEntry fs
-      where
-        fEntry (FileEntry fi) = FileEntry <$> f fi 
-        fEntry (ExpandedDirectory fi dirEntries) = 
-          ExpandedDirectory <$> f fi <*> traverse fEntry dirEntries 
-
-instance L.Splittable FileEntries where
-  splitAt 0 (FileEntries fs) = (FileEntries [], FileEntries fs)
-  splitAt n (FileEntries fs) = 
-    let (_, ts) = takeEntry n fs
-        (_, ds) = dropEntry n fs
-    in (FileEntries ts, FileEntries ds)
-    where 
-      takeEntry 0 _ = (0, [])
-      takeEntry i [] = (i, [])
-      takeEntry i (FileEntry fi : entries) = 
-        let (i', ls) = takeEntry (i-1) entries
-        in (i', FileEntry fi : ls)
-      takeEntry i (ExpandedDirectory fi dirEntries : entries) = 
-        let (i', ls) = takeEntry (i-1) dirEntries
-            (i'', ls') = takeEntry (i') entries
-        in (i'', ExpandedDirectory fi ls : ls')
-      dropEntry 0 fs' = (0,fs')
-      dropEntry i [] = (i,[])
-      dropEntry i (FileEntry _ : entries) = dropEntry (i-1) entries
-      dropEntry i (ExpandedDirectory _ dirEntries : entries) = 
-        let (i', ds') = dropEntry (i-1) (dirEntries ++ entries)
-        in (i', ds')
-
--- | FileTreeInfo is an alias for a FileInfo with some text to prepend when rendered,
--- used to indent expanded directory contents.
-type FileTreeInfo = (Text, FileInfo)
 
 --setEntries :: FileTree n -> L.List n FileInfo -> FileTree n
 --setEntries (FileTree wd _ ss name) newEntries = (FileTree wd newEntries ss name)
@@ -119,6 +55,12 @@ type FileTreeInfo = (Text, FileInfo)
 mapEntries :: (L.GenericList n FileEntries FileTreeInfo -> L.GenericList n FileEntries FileTreeInfo) 
            -> FileTree n -> FileTree n
 mapEntries f (FileTree wd entries ss name) = (FileTree wd (f entries) ss name)
+
+setMode :: Mode -> FileTree n -> FileTree n
+setMode mode (FileTree wd entries _ name) = (FileTree wd entries mode name)
+
+mapSearchString :: (Text.Text -> Text.Text) -> FileTree n -> FileTree n
+mapSearchString f (FileTree wd entries mode name) = (FileTree wd entries (mapSearchMode f mode) name)
 
 --setSearchString :: FileTree n -> Maybe Text.Text -> FileTree n
 --setSearchString (FileTree wd entries _ name) newSearchString = (FileTree wd entries newSearchString name)
@@ -141,7 +83,7 @@ newFileTree name = do
   updateWorkingDirectory name initialCwd
 
 -- | Get the file information for the file under the cursor, if any.
-fileTreeCursor :: Show n => FileTree n -> Maybe FileTreeInfo
+fileTreeCursor :: FileTree n -> Maybe FileTreeInfo
 fileTreeCursor ft = snd <$> L.listSelectedElement (fileTreeEntries ft)
 
 theApp :: M.App (FileTree Name) e Name
@@ -167,10 +109,11 @@ renderFileInfo _selected (indent,fileInfo) =
     _ -> txt $ indent <> Text.pack (FB.fileInfoSanitizedFilename fileInfo)
 
 drawUI :: FileTree Name -> [Widget Name]
-drawUI ft = [center ui ]
+drawUI ft = [center ui <=> showMode]
     where
         ui = hCenter $
              renderFileTree ft
+        showMode = vBox [txt $ tshow $ fileTreeMode ft]
 --        help = padTop (T.Pad 1) $
 --               vBox [ case FB.fileBrowserException b of
 --                          Nothing -> emptyWidget
@@ -204,7 +147,7 @@ updateWorkingDirectory name workingDirectory = do
       return $ case parentResult of
           Left (_::E.IOException) -> entries
           Right parent -> parent : entries
-  return $ FileTree workingDirectory (L.list name (FileEntries (map fileInfoToEntry allEntries)) 1) Nothing name
+  return $ FileTree workingDirectory (L.list name (FileEntries (map fileInfoToEntry allEntries)) 1) Normal name
 
 openFile :: FileTree Name -> IO (FileTree Name)
 openFile s =
@@ -270,10 +213,31 @@ expandDirectory ft =
 appEvent :: FileTree Name -> BrickEvent Name e -> T.EventM Name (T.Next (FileTree Name))
 appEvent ft (VtyEvent ev) =
     case ev of
-      V.EvKey V.KEsc [] ->
-        M.halt ft
       V.EvKey V.KEnter [] -> do
         enterFile ft
+      _ -> 
+        case fileTreeMode ft of 
+          Normal -> appEventNormal ft ev
+          Search _ -> appEventSearch ft ev
+        
+appEvent ft _ = M.continue ft
+
+-- | The event handling function used in search mode
+appEventSearch :: FileTree Name -> V.Event -> T.EventM Name (T.Next (FileTree Name))
+appEventSearch ft ev =
+    case ev of
+      V.EvKey (V.KChar char) [] ->
+        M.continue $ mapSearchString (flip Text.snoc char) ft 
+      V.EvKey V.KEsc [] ->
+        M.continue $ setMode (Normal) ft
+      _ -> M.continue ft
+
+-- | The event handling function used in normal mode
+appEventNormal :: FileTree Name -> V.Event -> T.EventM Name (T.Next (FileTree Name))
+appEventNormal ft ev =
+    case ev of
+      V.EvKey (V.KChar 'q') [] ->
+        M.halt ft
       V.EvKey (V.KChar 'e') [] ->
         expandDirectory ft
       V.EvKey (V.KChar 'j') [] ->
@@ -284,9 +248,10 @@ appEvent ft (VtyEvent ev) =
         M.continue $ mapEntries (L.listMoveBy (-1)) ft
       V.EvKey (V.KChar 'k') [] ->
         M.continue $ mapEntries (L.listMoveBy (-1)) ft
+      V.EvKey (V.KChar 's') [] ->
+        M.continue $ setMode (Search "") ft
       _ -> M.continue ft
   
-appEvent ft _ = M.continue ft
 
 --------------------------------------------------------------------------------
 -- Attributes
