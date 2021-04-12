@@ -44,26 +44,25 @@ mapSearchMode _ mode = mode
 data FileTree n = 
   FileTree { fileTreeWorkingDirectory :: FilePath
            , fileTreeEntries :: L.GenericList n FileEntries FileTreeInfo
+           , fileTreeAllEntries :: FileEntries FileTreeInfo
            , fileTreeMode :: Mode
            , fileTreeName :: n
            } 
   deriving (Show)
 
---setEntries :: FileTree n -> L.List n FileInfo -> FileTree n
---setEntries (FileTree wd _ ss name) newEntries = (FileTree wd newEntries ss name)
-
-mapEntries :: (L.GenericList n FileEntries FileTreeInfo -> L.GenericList n FileEntries FileTreeInfo) 
+mapEntriesList :: (L.GenericList n FileEntries FileTreeInfo -> L.GenericList n FileEntries FileTreeInfo) 
            -> FileTree n -> FileTree n
-mapEntries f ft = ft { fileTreeEntries = f (fileTreeEntries ft)}
+mapEntriesList f ft = ft { fileTreeEntries = f (fileTreeEntries ft)}
+
+mapEntries :: (FileEntries FileTreeInfo -> FileEntries FileTreeInfo) 
+           -> FileTree n -> FileTree n
+mapEntries f ft = ft { fileTreeAllEntries = f (fileTreeAllEntries ft)
+                     , fileTreeEntries = let oldList = fileTreeEntries ft
+                                         in L.listReplace (f $ L.listElements oldList) (L.listSelected oldList) oldList}
 
 setMode :: Mode -> FileTree n -> FileTree n
 setMode mode ft = ft { fileTreeMode = mode}
 
-mapSearchString :: (Text.Text -> Text.Text) -> FileTree n -> FileTree n
-mapSearchString f ft = ft { fileTreeMode = mapSearchMode f (fileTreeMode ft)}
-
---setSearchString :: FileTree n -> Maybe Text.Text -> FileTree n
---setSearchString (FileTree wd entries _ name) newSearchString = (FileTree wd entries newSearchString name)
 
 --------------------------------------------------------------------------------
 -- Run
@@ -147,7 +146,8 @@ updateWorkingDirectory name workingDirectory = do
       return $ case parentResult of
           Left (_::E.IOException) -> entries
           Right parent -> parent : entries
-  return $ FileTree workingDirectory (L.list name (FileEntries (map fileInfoToEntry allEntries)) 1) Normal name
+  let fileEntries = FileEntries (map fileInfoToEntry allEntries)
+  return $ FileTree workingDirectory (L.list name fileEntries 1) fileEntries Normal name
 
 openFile :: FileTree Name -> IO (FileTree Name)
 openFile s =
@@ -206,9 +206,14 @@ expandDirectory ft =
           newFileEntries <- return $ mapFileEntries (flipExpansion newDirectoryContents fileInfo) 
                                    $ L.listElements $ fileTreeEntries ft
 
-          M.continue $ mapEntries (\oldList -> L.listReplace newFileEntries (L.listSelected oldList) oldList) ft
+          M.continue $ mapEntries (const newFileEntries) ft --(\oldList -> L.listReplace newFileEntries (L.listSelected oldList) oldList) ft
 
         _ -> M.continue ft
+
+updateSearchText :: (Text.Text -> Text.Text) -> FileTree n -> FileTree n
+updateSearchText f ft = 
+  let newFt = ft { fileTreeMode = mapSearchMode f (fileTreeMode ft)}
+  in newFt
 
 appEvent :: FileTree Name -> BrickEvent Name e -> T.EventM Name (T.Next (FileTree Name))
 appEvent ft (VtyEvent ev) =
@@ -227,7 +232,7 @@ appEventSearch :: FileTree Name -> V.Event -> T.EventM Name (T.Next (FileTree Na
 appEventSearch ft ev =
     case ev of
       V.EvKey (V.KChar char) [] ->
-        M.continue $ mapSearchString (flip Text.snoc char) ft 
+        M.continue $ updateSearchText (flip Text.snoc char) ft 
       V.EvKey V.KEsc [] ->
         M.continue $ setMode (Normal) ft
       _ -> M.continue ft
@@ -241,13 +246,13 @@ appEventNormal ft ev =
       V.EvKey (V.KChar 'e') [] ->
         expandDirectory ft
       V.EvKey (V.KChar 'j') [] ->
-        M.continue $ mapEntries (L.listMoveBy 1) ft
+        M.continue $ mapEntriesList (L.listMoveBy 1) ft
       V.EvKey V.KDown [] ->
-        M.continue $ mapEntries (L.listMoveBy 1) ft
+        M.continue $ mapEntriesList (L.listMoveBy 1) ft
       V.EvKey V.KUp [] ->
-        M.continue $ mapEntries (L.listMoveBy (-1)) ft
+        M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
       V.EvKey (V.KChar 'k') [] ->
-        M.continue $ mapEntries (L.listMoveBy (-1)) ft
+        M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
       V.EvKey (V.KChar 's') [] ->
         M.continue $ setMode (Search "") ft
       _ -> M.continue ft
