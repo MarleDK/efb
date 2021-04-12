@@ -54,13 +54,13 @@ data FileTree n =
 
 mapEntries :: (L.GenericList n FileEntries FileTreeInfo -> L.GenericList n FileEntries FileTreeInfo) 
            -> FileTree n -> FileTree n
-mapEntries f (FileTree wd entries ss name) = (FileTree wd (f entries) ss name)
+mapEntries f ft = ft { fileTreeEntries = f (fileTreeEntries ft)}
 
 setMode :: Mode -> FileTree n -> FileTree n
-setMode mode (FileTree wd entries _ name) = (FileTree wd entries mode name)
+setMode mode ft = ft { fileTreeMode = mode}
 
 mapSearchString :: (Text.Text -> Text.Text) -> FileTree n -> FileTree n
-mapSearchString f (FileTree wd entries mode name) = (FileTree wd entries (mapSearchMode f mode) name)
+mapSearchString f ft = ft { fileTreeMode = mapSearchMode f (fileTreeMode ft)}
 
 --setSearchString :: FileTree n -> Maybe Text.Text -> FileTree n
 --setSearchString (FileTree wd entries _ name) newSearchString = (FileTree wd entries newSearchString name)
