@@ -1,6 +1,6 @@
-name:                hfm
+name:                efb
 version:             0.1.0.0
-github:              MarleDK/hfm
+github:              MarleDK/efb
 license:             MIT
 author:              Jakob Rydhof
 maintainer:          jakobrydhof@gmail.com
@@ -17,7 +17,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on Github at <https://github.com/MarleDK/hfm#readme>
+description:         Please see the README on Github at <https://github.com/MarleDK/efb#readme>
 
 dependencies:
 - base >= 4.11 && < 10
@@ -42,11 +42,11 @@ library:
   source-dirs: src
 
 executables:
-  hfm-exe:
+  efb-exe:
     main:                Main.hs
     source-dirs:         app
     dependencies:
-    - hfm
+    - efb
     - optparse-simple
 
     ghc-options:
@@ -55,11 +55,11 @@ executables:
     - -with-rtsopts=-N
 
 tests:
-  hfm-test:
+  efb-test:
     main:                Spec.hs
     source-dirs:         test
     dependencies:
-    - hfm
+    - efb
     - hspec
 
     ghc-options:

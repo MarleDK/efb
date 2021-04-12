@@ -1,4 +1,4 @@
-# hfm
+# efb - Executing File Browser
 
 ## What is this?
 
@@ -6,9 +6,9 @@ A simple file browser, which runs a custom command when selecting a file.
 
 I created it to be used as a file browser when I am coding in neovim, where I use
 neovim remote (https://github.com/mhinz/neovim-remote) to spawn a neovim process 
-in one terminal, and then I have hfm in another terminal, which executes neovim 
+in one terminal, and then I have efb in another terminal, which executes neovim 
 remote to open new files in the allready open neovim window. 
-By having hfm in a seperate window, I can control it with my windowmanager, instead
+By having efb in a seperate window, I can control it with my windowmanager, instead
 of having it fixed to the same dimension as my neovim process.
 
 

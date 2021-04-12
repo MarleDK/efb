@@ -4,11 +4,11 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           hfm
+name:           efb
 version:        0.1.0.0
-description:    Please see the README on Github at <https://github.com/MarleDK/hfm#readme>
-homepage:       https://github.com/MarleDK/hfm#readme
-bug-reports:    https://github.com/MarleDK/hfm/issues
+description:    Please see the README on Github at <https://github.com/MarleDK/efb#readme>
+homepage:       https://github.com/MarleDK/efb#readme
+bug-reports:    https://github.com/MarleDK/efb/issues
 author:         Jakob Rydhof
 maintainer:     jakobrydhof@gmail.com
 copyright:      2021 Jakob Rydhof
@@ -21,7 +21,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/MarleDK/hfm
+  location: https://github.com/MarleDK/efb
 
 library
   exposed-modules:
@@ -31,7 +31,7 @@ library
       Types
       Util
   other-modules:
-      Paths_hfm
+      Paths_efb
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
@@ -46,10 +46,10 @@ library
     , vty
   default-language: Haskell2010
 
-executable hfm-exe
+executable efb-exe
   main-is: Main.hs
   other-modules:
-      Paths_hfm
+      Paths_efb
   hs-source-dirs:
       app
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
@@ -57,8 +57,8 @@ executable hfm-exe
       base >=4.11 && <10
     , brick >=0.58 && <0.61
     , directory
+    , efb
     , filepath
-    , hfm
     , optparse-simple
     , rio >=0.1.12.0
     , text
@@ -66,12 +66,12 @@ executable hfm-exe
     , vty
   default-language: Haskell2010
 
-test-suite hfm-test
+test-suite efb-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
       UtilSpec
-      Paths_hfm
+      Paths_efb
   hs-source-dirs:
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
@@ -79,8 +79,8 @@ test-suite hfm-test
       base >=4.11 && <10
     , brick >=0.58 && <0.61
     , directory
+    , efb
     , filepath
-    , hfm
     , hspec
     , rio >=0.1.12.0
     , text

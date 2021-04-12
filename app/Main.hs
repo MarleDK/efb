@@ -6,12 +6,12 @@ import Import
 import Run
 import RIO.Process
 import Options.Applicative.Simple
-import qualified Paths_hfm
+import qualified Paths_efb
 
 main :: IO ()
 main = do
   (options, ()) <- simpleOptions
-    $(simpleVersion Paths_hfm.version)
+    $(simpleVersion Paths_efb.version)
     "Header for command line arguments"
     "Program description, also for command line arguments"
     (Options
