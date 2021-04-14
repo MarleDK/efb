@@ -23,7 +23,7 @@ import qualified Brick.Types as T
 import Brick.Types (Widget, BrickEvent(..))
 import Brick.Widgets.Center (center, hCenter)
 import Brick.Widgets.Core 
-  ((<=>), txt, withDefAttr, emptyWidget, vBox, padTop)
+  ((<+>), (<=>), txt, withDefAttr, emptyWidget, vBox, padTop, hLimit)
 import Brick.Util (on, fg)
 
 --------------------------------------------------------------------------------
@@ -31,6 +31,7 @@ import Brick.Util (on, fg)
 --------------------------------------------------------------------------------
 
 data Name = FileBrowser1
+          | Debug1
   deriving (Eq, Show, Ord)
 
 data Mode = Normal
@@ -49,6 +50,7 @@ data FileTree n =
            , fileTreeName :: n
            } 
   deriving (Show)
+
 
 mapEntriesList :: (L.GenericList n FileEntries FileTreeInfo -> L.GenericList n FileEntries FileTreeInfo) 
            -> FileTree n -> FileTree n
@@ -108,11 +110,13 @@ renderFileInfo _selected (indent,fileInfo) =
     _ -> txt $ indent <> Text.pack (FB.fileInfoSanitizedFilename fileInfo)
 
 drawUI :: FileTree Name -> [Widget Name]
-drawUI ft = [center ui <=> showMode]
+drawUI ft = [center ui <=> showMode <+> showDebug]
     where
         ui = hCenter $
              renderFileTree ft
         showMode = vBox [txt $ tshow $ fileTreeMode ft]
+        showDebug = txt "Debug info - fileTreeAllEntries:" <=> 
+                      L.renderList renderFileInfo True (L.list Debug1 (fileTreeAllEntries ft) 1)
 --        help = padTop (T.Pad 1) $
 --               vBox [ case FB.fileBrowserException b of
 --                          Nothing -> emptyWidget
