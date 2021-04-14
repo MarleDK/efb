@@ -24,10 +24,6 @@ of having it fixed to the same dimension as my neovim process.
 ## Todo 
 
 - Implement Colors
-- Implement more keybindings
-  - 'h' and 'l' to go up and down in the file tree
-  - 's' to enter search mode
-- Search mode
 - Custom command to execute
 - Build out command line options
 - Write command line help description
