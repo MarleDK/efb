@@ -1,5 +1,7 @@
 # efb - Executing File Browser
 
+*WARNING: This is very early in development*
+
 ## What is this?
 
 A simple file browser, which runs a custom command when selecting a file.
