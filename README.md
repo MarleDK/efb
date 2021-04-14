@@ -32,3 +32,11 @@ of having it fixed to the same dimension as my neovim process.
 - Build out command line options
 - Write command line help description
 - ? Multiple different commands to execute with different key presses?
+- File management
+  - Creation of new files
+  - Renamimg of files
+  - ? Deletion of files
+- ? Showing Git status
+  - Maybe could be implemented as "run this command, and mark the files it returns"
+    This way it could work with more systems. And it would also fit well with custom
+    commands, as custom commands would then be able to add files in git, etc.
