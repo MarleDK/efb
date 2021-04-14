@@ -4,7 +4,7 @@
 module Run (run) where
 
 import Import hiding (on)
-import FileEntries (FileEntries(..), FileTreeInfo, Entry(..), mapFileEntries, getFileInfo, fileInfoToEntry)
+import FileEntries (FileEntries(..), FileTreeInfo, Entry(..), mapFileEntries, getFileInfo, fileInfoToEntry, filterFileEntries)
 
 import qualified Control.Exception as E
 import qualified Graphics.Vty as V
@@ -23,7 +23,7 @@ import qualified Brick.Types as T
 import Brick.Types (Widget, BrickEvent(..))
 import Brick.Widgets.Center (center, hCenter)
 import Brick.Widgets.Core 
-  ((<+>), (<=>), txt, withDefAttr, emptyWidget, vBox, padTop, hLimit)
+  ((<+>), (<=>), txt, withDefAttr, emptyWidget, hBox, vBox, padTop, hLimit)
 import Brick.Util (on, fg)
 
 --------------------------------------------------------------------------------
@@ -35,18 +35,15 @@ data Name = FileBrowser1
   deriving (Eq, Show, Ord)
 
 data Mode = Normal
-          | Search Text.Text
+          | Search
   deriving (Eq, Show)
-
-mapSearchMode :: (Text.Text -> Text.Text) -> Mode -> Mode
-mapSearchMode f (Search t) = Search (f t)
-mapSearchMode _ mode = mode
 
 data FileTree n = 
   FileTree { fileTreeWorkingDirectory :: FilePath
            , fileTreeEntries :: L.GenericList n FileEntries FileTreeInfo
            , fileTreeAllEntries :: FileEntries FileTreeInfo
            , fileTreeMode :: Mode
+           , fileTreeSearchText :: Text
            , fileTreeName :: n
            } 
   deriving (Show)
@@ -63,7 +60,7 @@ mapEntries f ft = ft { fileTreeAllEntries = f (fileTreeAllEntries ft)
                                          in L.listReplace (f $ L.listElements oldList) (L.listSelected oldList) oldList}
 
 setMode :: Mode -> FileTree n -> FileTree n
-setMode mode ft = ft { fileTreeMode = mode}
+setMode mode ft = updateSearch $ ft { fileTreeMode = mode}
 
 
 --------------------------------------------------------------------------------
@@ -110,11 +107,13 @@ renderFileInfo _selected (indent,fileInfo) =
     _ -> txt $ indent <> Text.pack (FB.fileInfoSanitizedFilename fileInfo)
 
 drawUI :: FileTree Name -> [Widget Name]
-drawUI ft = [center ui <=> showMode <+> showDebug]
+drawUI ft = [center ui <=> metaInfo <+> showDebug]
     where
         ui = hCenter $
              renderFileTree ft
-        showMode = vBox [txt $ tshow $ fileTreeMode ft]
+        metaInfo = hBox [showMode, txt "   ", showSearch]
+        showMode = txt $ tshow $ fileTreeMode ft
+        showSearch = txt $ "Search: " <> tshow (fileTreeSearchText ft) <> ""
         showDebug = txt "Debug info - fileTreeAllEntries:" <=> 
                       L.renderList renderFileInfo True (L.list Debug1 (fileTreeAllEntries ft) 1)
 --        help = padTop (T.Pad 1) $
@@ -151,12 +150,12 @@ updateWorkingDirectory name workingDirectory = do
           Left (_::E.IOException) -> entries
           Right parent -> parent : entries
   let fileEntries = FileEntries (map fileInfoToEntry allEntries)
-  return $ FileTree workingDirectory (L.list name fileEntries 1) fileEntries Normal name
+  return $ FileTree workingDirectory (L.list name fileEntries 1) fileEntries Normal "" name
 
 openFile :: FileTree Name -> IO (FileTree Name)
 openFile s =
   case fileTreeCursor s of
-    Nothing -> return s -- $ ExitFailure 1
+    Nothing -> return s 
     Just (_,fileInfo) -> 
       case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
         Right (Just FB.RegularFile) -> runProcess (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
@@ -208,16 +207,23 @@ expandDirectory ft =
               liftIO (getDirectoryContent (fileInfoFilePath fileInfo)) -- get contents of directory
 
           newFileEntries <- return $ mapFileEntries (flipExpansion newDirectoryContents fileInfo) 
-                                   $ L.listElements $ fileTreeEntries ft
+                                   $ fileTreeAllEntries ft
 
-          M.continue $ mapEntries (const newFileEntries) ft --(\oldList -> L.listReplace newFileEntries (L.listSelected oldList) oldList) ft
+          M.continue $ mapEntries (const newFileEntries) ft 
 
         _ -> M.continue ft
 
+updateSearch :: FileTree n -> FileTree n
+updateSearch ft = 
+  let oldList = fileTreeEntries ft
+      searchText = fileTreeSearchText ft
+      searchPred (_,fi) = Text.toLower searchText `Text.isInfixOf` (Text.toLower $ Text.pack $ fileInfoSanitizedFilename fi)
+  in ft {fileTreeEntries = L.listReplace (filterFileEntries searchPred (fileTreeAllEntries ft)) (L.listSelected oldList) oldList}
+
 updateSearchText :: (Text.Text -> Text.Text) -> FileTree n -> FileTree n
 updateSearchText f ft = 
-  let newFt = ft { fileTreeMode = mapSearchMode f (fileTreeMode ft)}
-  in newFt
+  let newFt = ft { fileTreeSearchText = f (fileTreeSearchText ft)}
+  in updateSearch newFt
 
 appEvent :: FileTree Name -> BrickEvent Name e -> T.EventM Name (T.Next (FileTree Name))
 appEvent ft (VtyEvent ev) =
@@ -227,7 +233,7 @@ appEvent ft (VtyEvent ev) =
       _ -> 
         case fileTreeMode ft of 
           Normal -> appEventNormal ft ev
-          Search _ -> appEventSearch ft ev
+          Search -> appEventSearch ft ev
         
 appEvent ft _ = M.continue ft
 
@@ -237,8 +243,14 @@ appEventSearch ft ev =
     case ev of
       V.EvKey (V.KChar char) [] ->
         M.continue $ updateSearchText (flip Text.snoc char) ft 
+      V.EvKey V.KBS [] ->
+        M.continue $ updateSearchText (Text.dropEnd 1) ft 
       V.EvKey V.KEsc [] ->
         M.continue $ setMode (Normal) ft
+      V.EvKey V.KDown [] ->
+        M.continue $ mapEntriesList (L.listMoveBy 1) ft
+      V.EvKey V.KUp [] ->
+        M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
       _ -> M.continue ft
 
 -- | The event handling function used in normal mode
@@ -258,7 +270,9 @@ appEventNormal ft ev =
       V.EvKey (V.KChar 'k') [] ->
         M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
       V.EvKey (V.KChar 's') [] ->
-        M.continue $ setMode (Search "") ft
+        M.continue $ setMode Search ft
+      V.EvKey (V.KChar 'c') [] ->
+        M.continue $ updateSearchText (const "") ft 
       _ -> M.continue ft
   
 

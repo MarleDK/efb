@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
-module FileEntries (FileEntries(..), Entry(..), FileTreeInfo, mapFileEntries, getFileInfo, fileInfoToEntry) where
+module FileEntries (FileEntries(..), Entry(..), FileTreeInfo, mapFileEntries, getFileInfo, fileInfoToEntry,
+                    filterFileEntries ) where
 
 import Import
 
@@ -9,6 +10,16 @@ import           Brick.Widgets.FileBrowser (FileInfo(..), FileInfo(..))
 
 data FileEntries a = FileEntries [Entry a]
   deriving (Show, Eq)
+
+filterFileEntries :: (a -> Bool) -> FileEntries a -> FileEntries a
+filterFileEntries pred (FileEntries entries) = FileEntries $ concatMap (filterEntry pred) entries
+
+filterEntry :: (a -> Bool) -> Entry a -> [Entry a]
+filterEntry pred (FileEntry a) = if pred a then [FileEntry a] else []
+filterEntry pred (ExpandedDirectory a entries) = 
+  case concatMap (filterEntry pred) entries of 
+    [] -> if pred a then [ExpandedDirectory a []] else []
+    filteredEntries -> [ExpandedDirectory a filteredEntries]
 
 mapFileEntries :: (Entry a -> Entry a) -> FileEntries a -> FileEntries a
 mapFileEntries f (FileEntries fs) = FileEntries $ femap f fs
