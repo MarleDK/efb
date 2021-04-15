@@ -24,6 +24,10 @@ of having it fixed to the same dimension as my neovim process.
 ## Todo 
 
 - Implement Colors
+- (Search) Make it so that the cursor is on (roughly) the same file when searching
+  - Can be implemented by splitting the tree at current cursor position, then filtering 
+    everything before the position, and setting the new position as the length of the 
+    filtered list.
 - More keybindings
   - Number quantifiers to move X entries up or down
     - ? Show line numbers
@@ -35,10 +39,15 @@ of having it fixed to the same dimension as my neovim process.
 - Write command line help description
 - ? Multiple different commands to execute with different key presses?
 - File management
-  - Creation of new files
-  - Renamimg of files
-  - ? Deletion of files
+  - Creation of new file
+  - Renamimg of file
+  - ? Deletion of file
+  - Copying of file
 - ? Showing Git status
   - Maybe could be implemented as "run this command, and mark the files it returns"
     This way it could work with more systems. And it would also fit well with custom
     commands, as custom commands would then be able to add files in git, etc.
+- ? Command mode - if you press ":" you could write a command to run in the shell
+  - ? ability to paste the file name of the file on the cursor
+  - ? ability to still move while writing a command. Or maybe just remember the command afterwards.
+      This way multiple files can easily be used for the command
