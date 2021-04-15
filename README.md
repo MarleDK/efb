@@ -24,10 +24,6 @@ of having it fixed to the same dimension as my neovim process.
 ## Todo 
 
 - Implement Colors
-- (Search) Make it so that the cursor is on (roughly) the same file when searching
-  - Can be implemented by splitting the tree at current cursor position, then filtering 
-    everything before the position, and setting the new position as the length of the 
-    filtered list.
 - More keybindings
   - Number quantifiers to move X entries up or down
     - ? Show line numbers
