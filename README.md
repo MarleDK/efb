@@ -24,6 +24,12 @@ of having it fixed to the same dimension as my neovim process.
 ## Todo 
 
 - Implement Colors
+- More keybindings
+  - Number quantifiers to move X entries up or down
+    - ? Show line numbers
+  - PgUp and PgDn for moving further
+  - H, M and L to move to beginning, middle and end of screen.
+  - G and g(?g) to move to top or bottom of list
 - Custom command to execute
 - Build out command line options
 - Write command line help description
