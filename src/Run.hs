@@ -9,7 +9,7 @@ import FileEntries (FileEntries(..), FileTreeInfo, Entry(..), mapFileEntries, ge
 import qualified Control.Exception as E
 import qualified Graphics.Vty as V
 import qualified Data.Text as Text
-import System.Process.Typed (proc, runProcess)
+import System.Process.Typed (proc, runProcess_)
 import qualified System.Directory as D
 import qualified System.FilePath as FP
 
@@ -107,7 +107,7 @@ renderFileInfo _selected (indent,fileInfo) =
     _ -> txt $ indent <> Text.pack (FB.fileInfoSanitizedFilename fileInfo)
 
 drawUI :: FileTree Name -> [Widget Name]
-drawUI ft = [center ui <=> metaInfo <+> showDebug]
+drawUI ft = [center ui <=> metaInfo ] -- <+> showDebug]
     where
         ui = hCenter $
              renderFileTree ft
@@ -131,6 +131,7 @@ drawUI ft = [center ui <=> metaInfo <+> showDebug]
 -- Handling events
 --------------------------------------------------------------------------------
 
+-- | get contents of a directory to show in the file tree
 getDirectoryContent :: FilePath -> IO ([FileInfo])
 getDirectoryContent workingDirectory = do
   entriesResult <- E.try $ FB.entriesForDirectory workingDirectory
@@ -141,6 +142,7 @@ getDirectoryContent workingDirectory = do
 
   return entries
 
+-- | update the file tree to a new working directory
 updateWorkingDirectory :: n -> FilePath -> IO (FileTree n)
 updateWorkingDirectory name workingDirectory = do
   entries <- getDirectoryContent workingDirectory
@@ -152,32 +154,34 @@ updateWorkingDirectory name workingDirectory = do
   let fileEntries = FileEntries (map fileInfoToEntry allEntries)
   return $ FileTree workingDirectory (L.list name fileEntries 1) fileEntries Normal "" name
 
-openFile :: FileTree Name -> IO (FileTree Name)
-openFile s =
-  case fileTreeCursor s of
-    Nothing -> return s 
-    Just (_,fileInfo) -> 
-      case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
-        Right (Just FB.RegularFile) -> runProcess (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
-                                       >> (return s)
-        _ -> return s
+-- | run the command on the file
+runFile :: FileInfo -> IO ()
+runFile fileInfo = 
+  case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
+    Right (Just FB.RegularFile) -> 
+      runProcess_ (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
+    _ -> return ()
 
+-- | Handle "entering" a file. Looks at the type of the file, if it is a directory
+-- it changes into that directory, if it is a regular file, it runs the given command.
 enterFile :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
 enterFile ft = 
   case fileTreeCursor ft of
     Nothing -> M.continue ft
     Just (_,entry) -> 
       case FB.fileInfoFileType entry of 
-        Just FB.Directory ->
-          M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) (FB.fileInfoFilePath entry)
+        Just FB.Directory     ->
+          M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) 
+                                                      (FB.fileInfoFilePath entry)
+        Just FB.RegularFile   -> M.suspendAndResume (runFile entry >> return ft)
 
-        Just FB.SymbolicLink -> 
-          case fileInfoLinkTargetType entry of
-            Just FB.Directory -> 
-              M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) (FB.fileInfoFilePath entry)
+        Just FB.SymbolicLink  -> case fileInfoLinkTargetType entry of
+            Just FB.Directory   -> 
+              M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) 
+                                                          (FB.fileInfoFilePath entry)
+            Just FB.RegularFile -> M.suspendAndResume (runFile entry >> return ft)
             _ -> M.continue ft
 
-        Just FB.RegularFile -> M.suspendAndResume (openFile ft)
         _ -> M.continue ft
 
 addIndentation :: Text -> FileInfo -> FileTreeInfo
@@ -188,31 +192,33 @@ flipExpansion :: [Entry FileTreeInfo] -- ^ The contents of the directory to mayb
               -> FileInfo             -- ^ The fileinfo of the file to find
               -> Entry FileTreeInfo   -- ^ The fileInfo of the list
               -> Entry FileTreeInfo
-flipExpansion newDirectoryContents fileInfo entry = if getFileInfo entry == fileInfo 
-                                 then case entry of
-                                        ExpandedDirectory fi _ -> FileEntry fi
-                                        FileEntry fi -> ExpandedDirectory fi newDirectoryContents
-                                 else entry
+flipExpansion newDirectoryContents fileInfo entry = 
+  if getFileInfo entry == fileInfo 
+  then case entry of
+        ExpandedDirectory fi _ -> FileEntry fi
+        FileEntry fi -> ExpandedDirectory fi newDirectoryContents
+  else entry
+
 -- | expandDirectory looks at the current selection, if it is a directory, it flips the expansion
 -- of it with flipExpansion
 expandDirectory :: FileTree Name -> T.EventM Name (T.Next (FileTree Name))
 expandDirectory ft =
   case fileTreeCursor ft of
-    Nothing -> M.continue ft
-    Just (indent,fileInfo) -> 
+    Nothing                 -> M.continue ft
+    Just (indent,fileInfo)  -> 
       case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of -- See if the file is a directory
         Right (Just FB.Directory) -> do
-          newDirectoryContents <- 
-            map (FileEntry . addIndentation indent) <$> -- Make it an Entry type
-              liftIO (getDirectoryContent (fileInfoFilePath fileInfo)) -- get contents of directory
+          newDirectoryContents <- map (FileEntry . addIndentation indent) <$> -- Make it an Entry type
+            liftIO (getDirectoryContent (fileInfoFilePath fileInfo)) -- get contents of directory
 
           newFileEntries <- return $ mapFileEntries (flipExpansion newDirectoryContents fileInfo) 
                                    $ fileTreeAllEntries ft
 
           M.continue $ mapEntries (const newFileEntries) ft 
 
-        _ -> M.continue ft
+        _                         -> M.continue ft
 
+-- | Update the FileTree to the current search text
 updateSearch :: FileTree n -> FileTree n
 updateSearch ft = 
   let oldList = fileTreeEntries ft
@@ -220,60 +226,56 @@ updateSearch ft =
       searchPred (_,fi) = Text.toLower searchText `Text.isInfixOf` (Text.toLower $ Text.pack $ fileInfoSanitizedFilename fi)
   in ft {fileTreeEntries = L.listReplace (filterFileEntries searchPred (fileTreeAllEntries ft)) (L.listSelected oldList) oldList}
 
+-- | map over the search text, and update the FileTree to correspond to the new search
 updateSearchText :: (Text.Text -> Text.Text) -> FileTree n -> FileTree n
 updateSearchText f ft = 
   let newFt = ft { fileTreeSearchText = f (fileTreeSearchText ft)}
   in updateSearch newFt
 
+-- | The event handler
 appEvent :: FileTree Name -> BrickEvent Name e -> T.EventM Name (T.Next (FileTree Name))
 appEvent ft (VtyEvent ev) =
-    case ev of
-      V.EvKey V.KEnter [] -> do
-        enterFile ft
-      _ -> 
-        case fileTreeMode ft of 
-          Normal -> appEventNormal ft ev
-          Search -> appEventSearch ft ev
-        
+  case fileTreeMode ft of 
+    Normal -> appEventNormal ft ev
+    Search -> appEventSearch ft ev
 appEvent ft _ = M.continue ft
 
 -- | The event handling function used in search mode
 appEventSearch :: FileTree Name -> V.Event -> T.EventM Name (T.Next (FileTree Name))
 appEventSearch ft ev =
-    case ev of
-      V.EvKey (V.KChar char) [] ->
-        M.continue $ updateSearchText (flip Text.snoc char) ft 
-      V.EvKey V.KBS [] ->
-        M.continue $ updateSearchText (Text.dropEnd 1) ft 
-      V.EvKey V.KEsc [] ->
-        M.continue $ setMode (Normal) ft
-      V.EvKey V.KDown [] ->
-        M.continue $ mapEntriesList (L.listMoveBy 1) ft
-      V.EvKey V.KUp [] ->
-        M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
-      _ -> M.continue ft
+  case ev of
+  -- Writing
+    -- Write given character
+    V.EvKey (V.KChar char) [] -> M.continue $ updateSearchText (flip Text.snoc char) ft 
+    -- delete last char
+    V.EvKey V.KBS []          -> M.continue $ updateSearchText (Text.dropEnd 1) ft
+  -- Movement
+    V.EvKey V.KDown []        -> M.continue $ mapEntriesList (L.listMoveBy 1) ft
+    V.EvKey V.KUp []          -> M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
+  -- Return to normal mode
+    V.EvKey V.KEsc []         -> M.continue $ setMode (Normal) ft
+    V.EvKey V.KEnter []       -> M.continue $ setMode (Normal) ft
+    _ -> M.continue ft
 
 -- | The event handling function used in normal mode
 appEventNormal :: FileTree Name -> V.Event -> T.EventM Name (T.Next (FileTree Name))
 appEventNormal ft ev =
-    case ev of
-      V.EvKey (V.KChar 'q') [] ->
-        M.halt ft
-      V.EvKey (V.KChar 'e') [] ->
-        expandDirectory ft
-      V.EvKey (V.KChar 'j') [] ->
-        M.continue $ mapEntriesList (L.listMoveBy 1) ft
-      V.EvKey V.KDown [] ->
-        M.continue $ mapEntriesList (L.listMoveBy 1) ft
-      V.EvKey V.KUp [] ->
-        M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
-      V.EvKey (V.KChar 'k') [] ->
-        M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
-      V.EvKey (V.KChar 's') [] ->
-        M.continue $ setMode Search ft
-      V.EvKey (V.KChar 'c') [] ->
-        M.continue $ updateSearchText (const "") ft 
-      _ -> M.continue ft
+  case ev of
+  -- Entering directories or run command on file
+    V.EvKey V.KEnter []       -> enterFile ft
+    V.EvKey (V.KChar 'l') []  -> enterFile ft
+    V.EvKey (V.KChar 'e') []  -> expandDirectory ft
+  -- Movement 
+    V.EvKey (V.KChar 'j') []  -> M.continue $ mapEntriesList (L.listMoveBy 1) ft
+    V.EvKey V.KDown []        -> M.continue $ mapEntriesList (L.listMoveBy 1) ft
+    V.EvKey (V.KChar 'k') []  -> M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
+    V.EvKey V.KUp []          -> M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
+  -- Search
+    V.EvKey (V.KChar 's') []  -> M.continue $ setMode Search ft
+    V.EvKey (V.KChar 'c') []  -> M.continue $ updateSearchText (const "") ft 
+  -- Quit
+    V.EvKey (V.KChar 'q') []  -> M.halt ft
+    _ -> M.continue ft
   
 
 --------------------------------------------------------------------------------
