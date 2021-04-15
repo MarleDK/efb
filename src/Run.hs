@@ -223,8 +223,14 @@ updateSearch :: FileTree n -> FileTree n
 updateSearch ft = 
   let oldList = fileTreeEntries ft
       searchText = fileTreeSearchText ft
-      searchPred (_,fi) = Text.toLower searchText `Text.isInfixOf` (Text.toLower $ Text.pack $ fileInfoSanitizedFilename fi)
-  in ft {fileTreeEntries = L.listReplace (filterFileEntries searchPred (fileTreeAllEntries ft)) (L.listSelected oldList) oldList}
+      searchPred (_,fi) = Text.toLower searchText `Text.isInfixOf` 
+                          (Text.toLower $ Text.pack $ fileInfoSanitizedFilename fi)
+      elementsBeforeSelected = fst $ L.splitAt (fromMaybe 0 (L.listSelected oldList)) 
+                                               (L.listElements oldList)
+      newIndex = length $ filterFileEntries searchPred elementsBeforeSelected 
+  in ft {fileTreeEntries = L.listReplace (filterFileEntries searchPred (fileTreeAllEntries ft)) 
+                                         (Just newIndex) oldList
+        }
 
 -- | map over the search text, and update the FileTree to correspond to the new search
 updateSearchText :: (Text.Text -> Text.Text) -> FileTree n -> FileTree n
