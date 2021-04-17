@@ -23,9 +23,7 @@ of having it fixed to the same dimension as my neovim process.
 
 ## Todo 
 
-- Custom command to execute
 - Build out command line options
-- Write command line help description
 - Implement Colors
 - More keybindings
   - Number quantifiers to move X entries up or down
