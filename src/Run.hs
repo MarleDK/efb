@@ -12,6 +12,8 @@ import qualified Data.Text as Text
 import System.Process.Typed (proc, runProcess_)
 import qualified System.Directory as D
 import qualified System.FilePath as FP
+import           RIO.Char (isDigit)
+import           RIO.Char.Partial (digitToInt)
 
 import qualified Brick.Main as M
 import qualified Brick.Widgets.List as L
@@ -56,6 +58,7 @@ data FileTree n =
            , fileTreeAllEntries :: FileEntries FileTreeInfo
            , fileTreeMode :: Mode
            , fileTreeSearchText :: Text
+           , fileTreeQuantifier :: Int
            , fileTreeConfig :: Config n
            } 
   deriving (Show)
@@ -185,6 +188,7 @@ updateWorkingDirectory conf workingDirectory = do
                     , fileTreeAllEntries = fileEntries 
                     , fileTreeMode = Normal
                     , fileTreeSearchText = ""
+                    , fileTreeQuantifier = 1
                     , fileTreeConfig = conf
                     }
 
@@ -301,17 +305,21 @@ appEventSearch ft ev =
 
 -- | The event handling function used in normal mode
 appEventNormal :: FileTree Name -> V.Event -> T.EventM Name (T.Next (FileTree Name))
-appEventNormal ft ev =
-  case ev of
+appEventNormal oldFt ev =
+  let n = fileTreeQuantifier oldFt -- get the current quantifier
+      ft = oldFt {fileTreeQuantifier = 1} -- reset the quantifier for updated ft
+  in case ev of
   -- Entering directories or run command on file
     V.EvKey V.KEnter []       -> enterFile ft
     V.EvKey (V.KChar 'l') []  -> enterFile ft
     V.EvKey (V.KChar 'e') []  -> expandDirectory ft
   -- Movement 
-    V.EvKey (V.KChar 'j') []  -> M.continue $ mapEntriesList (L.listMoveBy 1) ft
-    V.EvKey V.KDown []        -> M.continue $ mapEntriesList (L.listMoveBy 1) ft
-    V.EvKey (V.KChar 'k') []  -> M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
-    V.EvKey V.KUp []          -> M.continue $ mapEntriesList (L.listMoveBy (-1)) ft
+    V.EvKey (V.KChar 'j') []  -> M.continue $ mapEntriesList (L.listMoveBy n) ft
+    V.EvKey V.KDown []        -> M.continue $ mapEntriesList (L.listMoveBy n) ft
+    V.EvKey (V.KChar 'k') []  -> M.continue $ mapEntriesList (L.listMoveBy (-n)) ft
+    V.EvKey V.KUp []          -> M.continue $ mapEntriesList (L.listMoveBy (-n)) ft
+    V.EvKey (V.KChar x) []  | isDigit x -> 
+      M.continue $ ft {fileTreeQuantifier = digitToInt x}
   -- Search
     V.EvKey (V.KChar 's') []  -> M.continue $ setMode Search ft
     V.EvKey (V.KChar 'c') []  -> M.continue $ updateSearchText (const "") ft 

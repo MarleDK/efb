@@ -25,8 +25,6 @@ of having it fixed to the same dimension as my neovim process.
 
 - Implement Colors
 - More keybindings
-  - Number quantifiers to move X entries up or down
-    - ? Show line numbers
   - PgUp and PgDn for moving further
   - h to move back up a directory
   - H, M and L to move to beginning, middle and end of screen.
