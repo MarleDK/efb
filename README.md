@@ -23,6 +23,9 @@ of having it fixed to the same dimension as my neovim process.
 
 ## Todo 
 
+- Custom command to execute
+- Build out command line options
+- Write command line help description
 - Implement Colors
 - More keybindings
   - Number quantifiers to move X entries up or down
@@ -30,9 +33,7 @@ of having it fixed to the same dimension as my neovim process.
   - PgUp and PgDn for moving further
   - H, M and L to move to beginning, middle and end of screen.
   - G and g(?g) to move to top or bottom of list
-- Custom command to execute
-- Build out command line options
-- Write command line help description
+  - Show and hide hidden files/folders
 - ? Multiple different commands to execute with different key presses?
 - File management
   - Creation of new file
@@ -47,3 +48,4 @@ of having it fixed to the same dimension as my neovim process.
   - ? ability to paste the file name of the file on the cursor
   - ? ability to still move while writing a command. Or maybe just remember the command afterwards.
       This way multiple files can easily be used for the command
+- Look into minimizing the binary size
