@@ -19,6 +19,7 @@ main = do
                  <> short 'v'
                  <> help "Verbose output?"
                   )
+       <*> argument str (metavar "COMMAND")
     )
     empty
   lo <- logOptionsHandle stderr (optionsVerbose options)

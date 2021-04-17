@@ -38,13 +38,25 @@ data Mode = Normal
           | Search
   deriving (Eq, Show)
 
+data Config n = 
+  Config { configName :: n
+         , configCommand :: (String,[String])
+         }
+  deriving (Eq, Show)
+
+fileTreeName :: FileTree n -> n
+fileTreeName = configName . fileTreeConfig
+
+fileTreeCommand :: FileTree n -> (String,[String])
+fileTreeCommand = configCommand . fileTreeConfig
+
 data FileTree n = 
   FileTree { fileTreeWorkingDirectory :: FilePath
            , fileTreeEntries :: L.GenericList n FileEntries FileTreeInfo
            , fileTreeAllEntries :: FileEntries FileTreeInfo
            , fileTreeMode :: Mode
            , fileTreeSearchText :: Text
-           , fileTreeName :: n
+           , fileTreeConfig :: Config n
            } 
   deriving (Show)
 
@@ -69,16 +81,32 @@ setMode mode ft = updateSearch $ ft { fileTreeMode = mode}
 
 run :: RIO App ()
 run = do
-  _ <- liftIO $ M.defaultMain theApp =<< newFileTree FileBrowser1
+  command <- getCommand
+  let config = Config { configName = FileBrowser1
+                      , configCommand = command
+                      }
+  _ <- liftIO $ M.defaultMain theApp =<< newFileTree config
   return ()
   
+data InputParseException = InputParseException String
+  deriving Show
+instance Exception InputParseException
+
+getCommand :: RIO App (String, [String])
+getCommand = do
+  options <- ask
+  let command = optionsCommand $ appOptions options
+  case words command of
+    [] -> throwIO (InputParseException "Somehow optsapplicative could parse your COMMAND, but it does not seem to contain any words. This can happen if you try to use spaces as your command, or use ''.")
+    h:t -> return (h,t)
+
 parentOf :: FilePath -> IO FileInfo
 parentOf path = FB.getFileInfo ".." $ FP.takeDirectory path
 
-newFileTree :: n -> IO (FileTree n)
-newFileTree name = do
+newFileTree :: Config n -> IO (FileTree n)
+newFileTree config = do
   initialCwd <- D.getCurrentDirectory
-  updateWorkingDirectory name initialCwd
+  updateWorkingDirectory config initialCwd
 
 -- | Get the file information for the file under the cursor, if any.
 fileTreeCursor :: FileTree n -> Maybe FileTreeInfo
@@ -143,8 +171,8 @@ getDirectoryContent workingDirectory = do
   return entries
 
 -- | update the file tree to a new working directory
-updateWorkingDirectory :: n -> FilePath -> IO (FileTree n)
-updateWorkingDirectory name workingDirectory = do
+updateWorkingDirectory :: Config n -> FilePath -> IO (FileTree n)
+updateWorkingDirectory conf workingDirectory = do
   entries <- getDirectoryContent workingDirectory
   allEntries <- if workingDirectory == "/" then return entries else do
       parentResult <- E.try $ parentOf workingDirectory
@@ -152,14 +180,20 @@ updateWorkingDirectory name workingDirectory = do
           Left (_::E.IOException) -> entries
           Right parent -> parent : entries
   let fileEntries = FileEntries (map fileInfoToEntry allEntries)
-  return $ FileTree workingDirectory (L.list name fileEntries 1) fileEntries Normal "" name
+  return $ FileTree { fileTreeWorkingDirectory = workingDirectory 
+                    , fileTreeEntries = (L.list (configName conf) fileEntries 1) 
+                    , fileTreeAllEntries = fileEntries 
+                    , fileTreeMode = Normal
+                    , fileTreeSearchText = ""
+                    , fileTreeConfig = conf
+                    }
 
 -- | run the command on the file
-runFile :: FileInfo -> IO ()
-runFile fileInfo = 
+runFile :: (String,[String]) -> FileInfo -> IO ()
+runFile (command,options) fileInfo = 
   case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
     Right (Just FB.RegularFile) -> 
-      runProcess_ (proc "nvr" [FB.fileInfoFilePath fileInfo]) 
+      runProcess_ (proc command (options ++ [FB.fileInfoFilePath fileInfo]))
     _ -> return ()
 
 -- | Handle "entering" a file. Looks at the type of the file, if it is a directory
@@ -171,15 +205,17 @@ enterFile ft =
     Just (_,entry) -> 
       case FB.fileInfoFileType entry of 
         Just FB.Directory     ->
-          M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) 
+          M.suspendAndResume $ updateWorkingDirectory (fileTreeConfig ft) 
                                                       (FB.fileInfoFilePath entry)
-        Just FB.RegularFile   -> M.suspendAndResume (runFile entry >> return ft)
+        Just FB.RegularFile   -> 
+          M.suspendAndResume (runFile (fileTreeCommand ft) entry >> return ft)
 
         Just FB.SymbolicLink  -> case fileInfoLinkTargetType entry of
             Just FB.Directory   -> 
-              M.suspendAndResume $ updateWorkingDirectory (fileTreeName ft) 
+              M.suspendAndResume $ updateWorkingDirectory (fileTreeConfig ft) 
                                                           (FB.fileInfoFilePath entry)
-            Just FB.RegularFile -> M.suspendAndResume (runFile entry >> return ft)
+            Just FB.RegularFile -> 
+              M.suspendAndResume (runFile (fileTreeCommand ft) entry >> return ft)
             _ -> M.continue ft
 
         _ -> M.continue ft
