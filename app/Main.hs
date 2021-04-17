@@ -12,8 +12,12 @@ main :: IO ()
 main = do
   (options, ()) <- simpleOptions
     $(simpleVersion Paths_efb.version)
-    "Header for command line arguments"
-    "Program description, also for command line arguments"
+    (unlines
+      [ "Executing File browser (efb) is a terminal UI file browser, which"
+      , "executes a given COMMAND on"
+      , "any selected file."
+      ])
+    "If you want to use a COMMAND with arguments, you should wrap it in single quotes ''."
     (Options
        <$> switch ( long "verbose"
                  <> short 'v'
