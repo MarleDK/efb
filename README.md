@@ -23,6 +23,10 @@ of having it fixed to the same dimension as my neovim process.
 
 ## Todo 
 
+- [Bug] When the external command has an error, efb crashes, it should not, but it should 
+  probably show the error in some way
+- [Bug] When a directory is expanded, the search text is not used to filter
+  - Maybe any event should just trigger updateSearch
 - Implement Colors
 - More keybindings
   - PgUp and PgDn for moving further
@@ -30,6 +34,7 @@ of having it fixed to the same dimension as my neovim process.
   - H, M and L to move to beginning, middle and end of screen.
   - G and g(?g) to move to top or bottom of list
   - Show and hide hidden files/folders
+  - r to reload the file tree
 - ? Multiple different commands to execute with different key presses?
 - File management
   - Creation of new file
@@ -40,6 +45,8 @@ of having it fixed to the same dimension as my neovim process.
   - Maybe could be implemented as "run this command, and mark the files it returns"
     This way it could work with more systems. And it would also fit well with custom
     commands, as custom commands would then be able to add files in git, etc.
+    - If this is done, it should probably be able to poll the file system for updates
+- Automatically be updated when new files are created, files are renamed, etc.
 - ? Command mode - if you press ":" you could write a command to run in the shell
   - ? ability to paste the file name of the file on the cursor
   - ? ability to still move while writing a command. Or maybe just remember the command afterwards.
