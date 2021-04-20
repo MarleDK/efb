@@ -6,6 +6,9 @@ module Run (run) where
 import Import hiding (on)
 import FileEntries (FileEntries(..), FileTreeInfo, Entry(..), mapFileEntries, getFileInfo, fileInfoToEntry, filterFileEntries)
 
+import System.IO (stderr)
+import qualified Data.ByteString.Lazy as BS
+
 import qualified Control.Exception as E
 import qualified Graphics.Vty as V
 import qualified Data.Text as Text
@@ -14,7 +17,6 @@ import qualified System.Directory as D
 import qualified System.FilePath as FP
 import           RIO.Char (isDigit)
 import           RIO.Char.Partial (digitToInt)
-import qualified Data.ByteString.Lazy.Internal as BS
 
 import qualified Brick.Main as M
 import qualified Brick.Widgets.List as L
@@ -195,8 +197,11 @@ updateWorkingDirectory conf workingDirectory = do
 runFile :: String -> FileInfo -> IO (Maybe (ExitCode, BS.ByteString, BS.ByteString))
 runFile command fileInfo = 
   case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
-    Right (Just FB.RegularFile) -> 
-      Just <$> readProcess (shell (command ++ " " ++ FB.fileInfoFilePath fileInfo))
+    Right (Just FB.RegularFile) -> do
+      (ec,stdOut,stdErr) <- readProcess (shell (command ++ " " ++ FB.fileInfoFilePath fileInfo))
+      BS.putStr stdOut                -- We want to make the errors printed to the users terminal
+      BS.hPut stderr stdErr        -- for the user to further investigate
+      return $ Just (ec,stdOut, stdErr)
     _ -> return Nothing
 
 setErrorMsg :: FileTree n -> Maybe (ExitCode, BS.ByteString, BS.ByteString) -> FileTree n
