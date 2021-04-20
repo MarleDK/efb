@@ -23,8 +23,6 @@ of having it fixed to the same dimension as my neovim process.
 
 ## Todo 
 
-- [Bug] When the external command has an error, efb crashes, it should not, but it should 
-  probably show the error in some way
 - [Bug] When a directory is expanded, the search text is not used to filter
   - Maybe any event should just trigger updateSearch
 - Implement Colors

@@ -38,6 +38,7 @@ library
   build-depends:
       base >=4.11 && <10
     , brick >=0.58 && <0.61
+    , bytestring
     , directory
     , filepath
     , rio >=0.1.12.0
@@ -56,6 +57,7 @@ executable efb-exe
   build-depends:
       base >=4.11 && <10
     , brick >=0.58 && <0.61
+    , bytestring
     , directory
     , efb
     , filepath
@@ -78,6 +80,7 @@ test-suite efb-test
   build-depends:
       base >=4.11 && <10
     , brick >=0.58 && <0.61
+    , bytestring
     , directory
     , efb
     , filepath

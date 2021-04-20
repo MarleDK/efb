@@ -28,6 +28,7 @@ dependencies:
 - typed-process
 - directory
 - filepath
+- bytestring
 
 ghc-options:
 - -Wall

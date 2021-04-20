@@ -9,11 +9,12 @@ import FileEntries (FileEntries(..), FileTreeInfo, Entry(..), mapFileEntries, ge
 import qualified Control.Exception as E
 import qualified Graphics.Vty as V
 import qualified Data.Text as Text
-import System.Process.Typed (proc, runProcess_)
+import System.Process.Typed (shell, readProcess)
 import qualified System.Directory as D
 import qualified System.FilePath as FP
 import           RIO.Char (isDigit)
 import           RIO.Char.Partial (digitToInt)
+import qualified Data.ByteString.Lazy.Internal as BS
 
 import qualified Brick.Main as M
 import qualified Brick.Widgets.List as L
@@ -42,14 +43,14 @@ data Mode = Normal
 
 data Config n = 
   Config { configName :: n
-         , configCommand :: (String,[String])
+         , configCommand :: String
          }
   deriving (Eq, Show)
 
 fileTreeName :: FileTree n -> n
 fileTreeName = configName . fileTreeConfig
 
-fileTreeCommand :: FileTree n -> (String,[String])
+fileTreeCommand :: FileTree n -> String
 fileTreeCommand = configCommand . fileTreeConfig
 
 data FileTree n = 
@@ -59,6 +60,7 @@ data FileTree n =
            , fileTreeMode :: Mode
            , fileTreeSearchText :: Text
            , fileTreeQuantifier :: Int
+           , fileTreeErrorMsg :: Maybe Text
            , fileTreeConfig :: Config n
            } 
   deriving (Show)
@@ -84,7 +86,7 @@ setMode mode ft = updateSearch $ ft { fileTreeMode = mode}
 
 run :: RIO App ()
 run = do
-  command <- getCommand
+  command <- optionsCommand <$> appOptions <$> ask
   let config = Config { configName = FileBrowser1
                       , configCommand = command
                       }
@@ -94,14 +96,6 @@ run = do
 data InputParseException = InputParseException String
   deriving Show
 instance Exception InputParseException
-
-getCommand :: RIO App (String, [String])
-getCommand = do
-  options <- ask
-  let command = optionsCommand $ appOptions options
-  case words command of
-    [] -> throwIO (InputParseException "Somehow optsapplicative could parse your COMMAND, but it does not seem to contain any words. This can happen if you try to use spaces as your command, or use ''.")
-    h:t -> return (h,t)
 
 parentOf :: FilePath -> IO FileInfo
 parentOf path = FB.getFileInfo ".." $ FP.takeDirectory path
@@ -138,13 +132,17 @@ renderFileInfo _selected (indent,fileInfo) =
     _ -> txt $ indent <> Text.pack (FB.fileInfoSanitizedFilename fileInfo)
 
 drawUI :: FileTree Name -> [Widget Name]
-drawUI ft = [center ui <=> metaInfo ] -- <+> showDebug]
+drawUI ft = [center ui <=> showError <=> metaInfo ] -- <+> showDebug]
     where
         ui = hCenter $
              renderFileTree ft
         metaInfo = hBox [showMode, txt "   ", showSearch]
         showMode = txt $ tshow $ fileTreeMode ft
         showSearch = txt $ "Search: " <> tshow (fileTreeSearchText ft) <> ""
+        showError = case fileTreeErrorMsg ft of
+                      Nothing -> emptyWidget
+                      Just errMsg -> txt "An error occured while running the external command:" 
+                                     <=> txt errMsg
         showDebug = txt "Debug info - fileTreeAllEntries:" <=> 
                       L.renderList renderFileInfo True (L.list Debug1 (fileTreeAllEntries ft) 1)
 --        help = padTop (T.Pad 1) $
@@ -189,16 +187,22 @@ updateWorkingDirectory conf workingDirectory = do
                     , fileTreeMode = Normal
                     , fileTreeSearchText = ""
                     , fileTreeQuantifier = 1
+                    , fileTreeErrorMsg = Nothing
                     , fileTreeConfig = conf
                     }
 
 -- | run the command on the file
-runFile :: (String,[String]) -> FileInfo -> IO ()
-runFile (command,options) fileInfo = 
+runFile :: String -> FileInfo -> IO (Maybe (ExitCode, BS.ByteString, BS.ByteString))
+runFile command fileInfo = 
   case FB.fileStatusFileType <$> FB.fileInfoFileStatus fileInfo of
     Right (Just FB.RegularFile) -> 
-      runProcess_ (proc command (options ++ [FB.fileInfoFilePath fileInfo]))
-    _ -> return ()
+      Just <$> readProcess (shell (command ++ " " ++ FB.fileInfoFilePath fileInfo))
+    _ -> return Nothing
+
+setErrorMsg :: FileTree n -> Maybe (ExitCode, BS.ByteString, BS.ByteString) -> FileTree n
+setErrorMsg ft Nothing = ft
+setErrorMsg ft (Just (ExitSuccess,_,_)) = ft
+setErrorMsg ft (Just (ExitFailure _,_,stdErr)) = ft {fileTreeErrorMsg = Just $ tshow stdErr}
 
 -- | Handle "entering" a file. Looks at the type of the file, if it is a directory
 -- it changes into that directory, if it is a regular file, it runs the given command.
@@ -212,14 +216,14 @@ enterFile ft =
           M.suspendAndResume $ updateWorkingDirectory (fileTreeConfig ft) 
                                                       (FB.fileInfoFilePath entry)
         Just FB.RegularFile   -> 
-          M.suspendAndResume (runFile (fileTreeCommand ft) entry >> return ft)
+          M.suspendAndResume (runFile (fileTreeCommand ft) entry >>= return . setErrorMsg ft)
 
         Just FB.SymbolicLink  -> case fileInfoLinkTargetType entry of
             Just FB.Directory   -> 
               M.suspendAndResume $ updateWorkingDirectory (fileTreeConfig ft) 
                                                           (FB.fileInfoFilePath entry)
             Just FB.RegularFile -> 
-              M.suspendAndResume (runFile (fileTreeCommand ft) entry >> return ft)
+              M.suspendAndResume (runFile (fileTreeCommand ft) entry >>= return . setErrorMsg ft)
             _ -> M.continue ft
 
         _ -> M.continue ft
