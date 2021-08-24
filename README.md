@@ -25,8 +25,10 @@ of having it fixed to the same dimension as my neovim process.
 
 - [Bug] When a directory is expanded, the search text is not used to filter
   - Maybe any event should just trigger updateSearch
+- Document, especially the types
 - A search mode searching through "closed" directories as well, maybe using capital s
 - A "bookmarking" to always show files at the top
+- A grep like search to find files with specific content, perhaps on 'f'
 - Implement Colors
 - More keybindings
   - PgUp and PgDn for moving further
