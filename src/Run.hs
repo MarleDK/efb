@@ -333,6 +333,8 @@ appEventNormal oldFt ev =
     V.EvKey V.KUp []          -> M.continue $ mapEntriesList (L.listMoveBy (-n)) ft
     V.EvKey (V.KChar x) []  | isDigit x ->
       M.continue $ ft {fileTreeQuantifier = digitToInt x}
+    V.EvKey (V.KChar 'g') []  -> M.continue $ mapEntriesList (L.listMoveTo 0) ft
+    V.EvKey (V.KChar 'G') []  -> M.continue $ mapEntriesList (L.listMoveTo (-1)) ft
   -- Search
     V.EvKey (V.KChar 's') []  -> M.continue $ setMode Search ft
     V.EvKey (V.KChar 'c') []  -> M.continue $ updateSearchText (const "") ft
