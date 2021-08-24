@@ -32,7 +32,6 @@ of having it fixed to the same dimension as my neovim process.
 - Implement Colors
 - More keybindings
   - PgUp and PgDn for moving further
-  - h to move back up a directory
   - H, M and L to move to beginning, middle and end of screen.
   - Show and hide hidden files/folders
   - r to reload the file tree

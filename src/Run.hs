@@ -34,6 +34,7 @@ import           Brick.Widgets.Center      (center, hCenter)
 import           Brick.Widgets.Core        (emptyWidget, hBox, hLimit, padTop,
                                             txt, vBox, withDefAttr, (<+>),
                                             (<=>))
+import           RIO.FilePath              ((</>))
 
 --------------------------------------------------------------------------------
 -- Types
@@ -197,6 +198,10 @@ updateWorkingDirectory conf workingDirectory = do
                     , fileTreeConfig = conf
                     }
 
+goToParentDirectory :: FileTree n -> IO (FileTree n)
+goToParentDirectory ft =
+  updateWorkingDirectory (fileTreeConfig ft) (fileTreeWorkingDirectory ft </> "..")
+
 -- | run the command on the file
 runFile :: String -> FileInfo -> IO (Maybe (ExitCode, BS.ByteString, BS.ByteString))
 runFile command fileInfo =
@@ -335,6 +340,7 @@ appEventNormal oldFt ev =
       M.continue $ ft {fileTreeQuantifier = digitToInt x}
     V.EvKey (V.KChar 'g') []  -> M.continue $ mapEntriesList (L.listMoveTo 0) ft
     V.EvKey (V.KChar 'G') []  -> M.continue $ mapEntriesList (L.listMoveTo (-1)) ft
+    V.EvKey (V.KChar 'h') []  -> M.suspendAndResume $ goToParentDirectory ft
   -- Search
     V.EvKey (V.KChar 's') []  -> M.continue $ setMode Search ft
     V.EvKey (V.KChar 'c') []  -> M.continue $ updateSearchText (const "") ft
