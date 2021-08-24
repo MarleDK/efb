@@ -267,7 +267,7 @@ expandDirectory ft =
           let newFileEntries = mapFileEntries (flipExpansion newDirectoryContents fileInfo)
                                  $ fileTreeAllEntries ft
 
-          M.continue $ mapEntries (const newFileEntries) ft
+          M.continue $ updateSearch $ mapEntries (const newFileEntries) ft
 
         _                         -> M.continue ft
 

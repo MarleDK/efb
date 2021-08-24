@@ -23,8 +23,6 @@ of having it fixed to the same dimension as my neovim process.
 
 ## Todo 
 
-- [Bug] When a directory is expanded, the search text is not used to filter
-  - Maybe any event should just trigger updateSearch
 - Document, especially the types
 - A search mode searching through "closed" directories as well, maybe using capital s
 - A "bookmarking" to always show files at the top
