@@ -25,6 +25,8 @@ of having it fixed to the same dimension as my neovim process.
 
 - Document, especially the types
 - A search mode searching through "closed" directories as well, maybe using capital s
+  - In this case all files should not be kept in memory
+  - The user interface might also be tricky, if you find a file nested in 7 directories
 - A "bookmarking" to always show files at the top
 - A grep like search to find files with specific content, perhaps on 'f'
 - Implement Colors
