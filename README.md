@@ -28,6 +28,7 @@ of having it fixed to the same dimension as my neovim process.
     - g,G: Move to top/bottom
     - s: enter search mode
     - c: clear search text
+    - r: sync with filesystem
     - q: quit
   - Search mode:
     - esc,enter: enter normal mode
@@ -47,7 +48,6 @@ of having it fixed to the same dimension as my neovim process.
   - PgUp and PgDn for moving further
   - H, M and L to move to beginning, middle and end of screen.
   - Show and hide hidden files/folders
-  - r to reload the file tree
 - ? Multiple different commands to execute with different key presses?
 - File management
   - Creation of new file

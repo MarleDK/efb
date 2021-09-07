@@ -83,6 +83,11 @@ mapEntries f ft = ft { fileTreeAllEntries = f (fileTreeAllEntries ft)
                      , fileTreeEntries = let oldList = fileTreeEntries ft
                                          in L.listReplace (f $ L.listElements oldList) (L.listSelected oldList) oldList}
 
+setEntries :: FileEntries FileTreeInfo -> FileTree n -> FileTree n
+setEntries fileEntries ft = ft { fileTreeAllEntries = fileEntries
+                     , fileTreeEntries = let oldList = fileTreeEntries ft
+                                         in L.listReplace fileEntries (L.listSelected oldList) oldList}
+
 setMode :: Mode -> FileTree n -> FileTree n
 setMode mode ft = updateSearch $ ft { fileTreeMode = mode}
 
@@ -103,9 +108,6 @@ run = do
 data InputParseException = InputParseException String
   deriving Show
 instance Exception InputParseException
-
-parentOf :: FilePath -> IO FileInfo
-parentOf path = FB.getFileInfo ".." $ FP.takeDirectory path
 
 newFileTree :: Config n -> IO (FileTree n)
 newFileTree config = do
@@ -167,27 +169,56 @@ drawUI ft = [center ui <=> showError <=> metaInfo ] -- <+> showDebug]
 -- Handling events
 --------------------------------------------------------------------------------
 
+-- | traverse the file tree entries, get updated content of each directory, and
+-- add new files/remove deleted files from the FileTree.
+refreshFileEntries :: Text -> [Entry FileTreeInfo]
+                   -> IO ([FileInfo], [Entry FileTreeInfo])
+                   -> IO ([FileInfo], [Entry FileTreeInfo])
+refreshFileEntries indent [] accumulator = do
+  (as, fes) <- accumulator
+  case as of
+    [] -> accumulator
+    h:t -> refreshFileEntries indent [] (return (t,FileEntry (indent,h) : fes))
+
+refreshFileEntries indent (fe@(FileEntry (_,fi)):entries) accumulator = do
+  (as, fes) <- accumulator
+  case as of
+    [] -> accumulator
+    h:t | h == fi -> refreshFileEntries indent entries (return (t,fe:fes))
+    h:t -> refreshFileEntries indent (fe: entries) (return (t,FileEntry (indent,h) : fes))
+
+refreshFileEntries indent (ed@(ExpandedDirectory (_,fi) dirEntries):entries) accumulator = do
+  (as, fes) <- accumulator
+  case as of
+    [] -> accumulator
+    h:t | h == fi -> do
+      newDirEntries <- getDirectoryContent (fileInfoFilePath fi)
+      (_, updatedDir) <- refreshFileEntries (indent <> "  ") dirEntries (return (newDirEntries, []))
+      refreshFileEntries indent entries (return (t,ExpandedDirectory (indent,fi) updatedDir:fes))
+    h:t -> refreshFileEntries indent (ed: entries) (return (t,FileEntry (indent, h) : fes))
+
+refreshFileTree :: FileTree n -> IO (FileTree n)
+refreshFileTree ft = do
+  entries <- getDirectoryContent (fileTreeWorkingDirectory ft)
+  let FileEntries fileInfoEntries = L.listElements $ fileTreeEntries ft
+  (_,newEntries) <- refreshFileEntries "" fileInfoEntries (return (entries, []))
+  return $ setEntries (FileEntries (reverse newEntries)) ft
+
+
 -- | get contents of a directory to show in the file tree
 getDirectoryContent :: FilePath -> IO [FileInfo]
 getDirectoryContent workingDirectory = do
   entriesResult <- E.try $ FB.entriesForDirectory workingDirectory
-
   let (entries, _) = case entriesResult of
           Left (e::E.IOException) -> ([], Just e)
           Right es                -> (es, Nothing)
-
   return entries
 
 -- | update the file tree to a new working directory
 updateWorkingDirectory :: Config n -> FilePath -> IO (FileTree n)
 updateWorkingDirectory conf workingDirectory = do
   entries <- getDirectoryContent workingDirectory
-  allEntries <- if workingDirectory == "/" then return entries else do
-      parentResult <- E.try $ parentOf workingDirectory
-      return $ case parentResult of
-          Left (_::E.IOException) -> entries
-          Right parent            -> parent : entries
-  let fileEntries = FileEntries (map fileInfoToEntry allEntries)
+  let fileEntries = FileEntries (map fileInfoToEntry entries)
   return $ FileTree { fileTreeWorkingDirectory = workingDirectory
                     , fileTreeEntries = L.list (configName conf) fileEntries 1
                     , fileTreeAllEntries = fileEntries
@@ -344,8 +375,9 @@ appEventNormal oldFt ev =
   -- Search
     V.EvKey (V.KChar 's') []  -> M.continue $ setMode Search ft
     V.EvKey (V.KChar 'c') []  -> M.continue $ updateSearchText (const "") ft
-  -- Quit
+  -- Management
     V.EvKey (V.KChar 'q') []  -> M.halt ft
+    V.EvKey (V.KChar 'r') []  -> M.suspendAndResume $ refreshFileTree ft
     _ -> M.continue ft
 
 
