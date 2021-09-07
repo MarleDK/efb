@@ -36,7 +36,13 @@ of having it fixed to the same dimension as my neovim process.
 
 ## Todo 
 
-- Document, especially the types
+- Refactor, create more files
+  - Functions that only use FileEntries and below, should be in FileEntries
+  - Rendering could get its own file
+  - Event Handling could get its own file
+    - Then Types probably needs to be moved aswell
+  - Document better, especially the types
+  
 - A search mode searching through "closed" directories as well, maybe using capital s
   - In this case all files should not be kept in memory
   - The user interface might also be tricky, if you find a file nested in 7 directories
