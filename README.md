@@ -15,7 +15,6 @@ of having it fixed to the same dimension as my neovim process.
 
 
 ## Features
-
 - Run a custom command on selected file
 - Expandable directories (by pressing e)
   - So you can see content of subdirectories
@@ -34,15 +33,20 @@ of having it fixed to the same dimension as my neovim process.
     - esc,enter: enter normal mode
     - up,down: move up/down
 
-## Todo 
+## Development File Overview
+- app/Main.hs is the starting point.
+  - It parses command line options, and then runs Run.hs(run)
+- Run.hs is starting the Brick app.
+  - It defines the key mapping
+  - It also calls other Brick things, like rendering
+- Types.hs defines the major types used throughout the app
+- Import.hs defines the imports required by a lot of the app
+- Render.hs defines how the app should render
+- UpdateFunctions.hs is a (messy) collection of functions used 
+  by the keymap to update the app according to the key pressed, 
+  and the "environment"
 
-- Refactor, create more files
-  - Functions that only use FileEntries and below, should be in FileEntries
-  - Rendering could get its own file
-  - Event Handling could get its own file
-    - Then Types probably needs to be moved aswell
-  - Document better, especially the types
-  
+## Todo 
 - A search mode searching through "closed" directories as well, maybe using capital s
   - In this case all files should not be kept in memory
   - The user interface might also be tricky, if you find a file nested in 7 directories
