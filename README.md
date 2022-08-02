@@ -2,6 +2,8 @@
 
 *WARNING: This is very early in development*
 
+# test
+
 ## What is this?
 
 A simple file browser, which runs a custom command when selecting a file.
